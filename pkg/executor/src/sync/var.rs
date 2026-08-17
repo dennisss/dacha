@@ -15,7 +15,7 @@ pub struct AsyncVariable<T> {
 
 struct AsyncVariableInner<T> {
     value: T,
-    waiters: Vec<oneshot::Sender<()>>,
+    waiters: Waiters,
 }
 
 impl<T> AsyncVariable<T> {
@@ -24,7 +24,7 @@ impl<T> AsyncVariable<T> {
             // TODO: Implement a a lock free list + Atomic variable instead?
             inner: AsyncMutex::new(AsyncVariableInner {
                 value: initial_value,
-                waiters: vec![],
+                waiters: Default::default(),
             }),
         }
     }
@@ -44,39 +44,9 @@ impl<T: Default> Default for AsyncVariable<T> {
 
 impl<T> AsyncVariableInner<T> {
     fn wait(mut guard: AsyncMutexGuard<'_, Self>) -> impl Future<Output = ()> {
-        let (tx, rx) = oneshot::channel();
-
-        // TODO: Currently no mechanism for effeciently cleaning up waiters
-        // without having to look through all of them
-        guard.collect();
-
-        guard.waiters.push(tx);
-
+        let waiter = guard.waiters.new_waiter();
         guard.exit();
-
-        async move {
-            rx.recv().await.ok();
-        }
-    }
-
-    /// Garbage collects all waiters which are no longer being waited on
-    fn collect(&mut self) {
-        let mut i = 0;
-        while i < self.waiters.len() {
-            let dropped = self.waiters[i].is_closed();
-
-            if dropped {
-                self.waiters.swap_remove(i);
-            } else {
-                i += 1;
-            }
-        }
-    }
-
-    fn notify_all(&mut self) {
-        for tx in self.waiters.drain(0..) {
-            tx.send(()).ok();
-        }
+        waiter
     }
 }
 
@@ -106,7 +76,7 @@ pub struct AsyncVariableGuard<'a, T> {
 
 impl<'a, T> AsyncVariableGuard<'a, T> {
     pub fn notify_all(&mut self) {
-        self.inner.notify_all();
+        self.inner.waiters.notify_all();
     }
 
     pub fn wait(mut self) -> impl Future<Output = ()> {
@@ -185,3 +155,49 @@ impl<'a, T> Deref for AsyncVariableReadOnlyGuard<'a, T> {
         &self.inner.as_ref().unwrap().value
     }
 }
+
+
+
+#[derive(Default)]
+pub struct Waiters {
+    waiters: Vec<oneshot::Sender<()>>,
+}
+
+impl Waiters {
+    pub fn new_waiter(&mut self) -> impl Future<Output = ()> {
+        let (tx, rx) = oneshot::channel();
+
+        // TODO: Currently no mechanism for efficiently cleaning up waiters
+        // without having to look through all of them
+        self.collect();
+
+        self.waiters.push(tx);
+
+        async move {
+            rx.recv().await.ok();
+        }
+    }
+
+    /// Garbage collects all waiters which are no longer being waited on
+    fn collect(&mut self) {
+        let mut i = 0;
+        while i < self.waiters.len() {
+            let dropped = self.waiters[i].is_closed();
+
+            if dropped {
+                self.waiters.swap_remove(i);
+            } else {
+                i += 1;
+            }
+        }
+    }
+
+    pub fn notify_all(&mut self) {
+        for tx in self.waiters.drain(0..) {
+            tx.send(()).ok();
+        }
+    }
+    
+}
+
+

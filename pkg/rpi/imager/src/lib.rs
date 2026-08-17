@@ -9,3 +9,6 @@ pub use config_txt::*;
 
 mod write;
 pub use write::*;
+
+mod fstype;
+pub use fstype::*;

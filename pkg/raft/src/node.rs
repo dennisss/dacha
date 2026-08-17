@@ -214,11 +214,11 @@ pub struct Node<R> {
 // Same as impl_resource_passthrough (but that macro doesn't support templates).
 #[async_trait]
 impl<R: 'static + Send> ServiceResource for Node<R> {
-    async fn add_cancellation_token(
+    fn add_cancellation_token(
         &self,
         token: ::std::sync::Arc<dyn executor::cancellation::CancellationToken>,
     ) {
-        self.resources.add_cancellation_token(token).await
+        self.resources.add_cancellation_token(token)
     }
 
     async fn new_resource_subscriber(&self) -> Box<dyn ServiceResourceSubscriber> {

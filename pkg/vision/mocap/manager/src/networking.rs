@@ -5,7 +5,7 @@ use common::errors::*;
 use common::hash::FastHasherBuilder;
 use net::route::NetworkInterfaceRoute;
 use cluster_client::id::{entity_id_to_string, entity_id_from_string};
-use mocap_proto::mocap::MocapCameraStub;
+use mocap_proto::mocap::{CameraStub , CameraSupervisorStub};
 use ptp_proto::ptp::TimeSyncStub;
 
 /*
@@ -22,7 +22,7 @@ pub struct CameraResolver {
 
 pub struct CameraConnection {
     pub ptp_stub: Arc<TimeSyncStub>,
-    pub camera_stub: Arc<MocapCameraStub>,
+    pub camera_stub: Arc<CameraStub >,
     pub ptp_addr: String,
     pub rpc_addr: String,
 }
@@ -143,7 +143,7 @@ impl CameraResolver {
         let channel = Arc::new(rpc::Http2Channel::create(channel_options).await?);
 
         let ptp_stub = Arc::new(TimeSyncStub::new(channel.clone()));
-        let camera_stub = Arc::new(MocapCameraStub::new(channel.clone()));
+        let camera_stub = Arc::new(CameraStub ::new(channel.clone()));
 
         Ok(CameraConnection {
             ptp_stub,
@@ -153,6 +153,19 @@ impl CameraResolver {
             rpc_addr: format!("{}:82", endpoint),
             ptp_addr: format!("{}:319", endpoint),
         })
+    }
+
+    pub async fn connect_to_supervisor(
+        &self, endpoint: &str
+    ) -> Result<Arc<CameraSupervisorStub>> {
+        let mut channel_options: rpc::Http2ChannelOptions = format!("http://{}:81", endpoint)
+            .as_str()
+            .try_into_result()?;
+        channel_options.http.backend_balancer.backend.route = Some(self.route.clone());
+
+        let channel = Arc::new(rpc::Http2Channel::create(channel_options).await?);
+
+        Ok(Arc::new(CameraSupervisorStub::new(channel.clone())))
     }
 
 

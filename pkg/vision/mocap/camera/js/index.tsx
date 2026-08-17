@@ -39,7 +39,7 @@ class App extends React.Component<{}, AppState> {
 
     _get_status = async () => {
         try {
-            let res = await this._channel.call('mocap.MocapCamera', 'Status', {});
+            let res = await this._channel.call('mocap.Camera', 'Status', {});
             if (!res.status.ok()) {
                 throw res.status.toString();
             }
@@ -54,7 +54,7 @@ class App extends React.Component<{}, AppState> {
     }
 
     async _get_status_once() {
-        let res = await this._channel.call('mocap.MocapCamera', 'Status', {});
+        let res = await this._channel.call('mocap.Camera', 'Status', {});
         if (!res.status.ok()) {
             throw res.status.toString();
         }
@@ -66,7 +66,7 @@ class App extends React.Component<{}, AppState> {
 
         // TODO: Retry everything with exponential backoff.
 
-        let res = this._channel.call_streaming('mocap.MocapCamera', 'ReadBlobs', {
+        let res = this._channel.call_streaming('mocap.Camera', 'ReadBlobs', {
             max_rate: 10
         });
         // TODO: Check the response status.
@@ -123,7 +123,7 @@ class App extends React.Component<{}, AppState> {
         let data = deep_copy(this.state.pending_config);
 
         try {
-            let res = await this._channel.call('mocap.MocapCamera', 'Configure', data);
+            let res = await this._channel.call('mocap.Camera', 'Configure', data);
             if (!res.status.ok()) {
                 throw res.status.toString();
             }

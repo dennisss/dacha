@@ -13,7 +13,7 @@ use executor_multitask::RootResource;
 use rpc_util::NamedPortArg;
 use ptp_proto::ptp::*;
 use cluster_client::{ClusterServer, ClusterMetaClient};
-use mocap_proto::mocap::{MocapCameraIntoService, CameraHardwareConfig};
+use mocap_proto::mocap::{CameraIntoService, CameraHardwareConfig};
 use mocap_camera::MocapCamera;
 use mocap_camera_core::CameraHardwareConfigContainer;
 use protobuf::StaticMessage;
@@ -55,7 +55,7 @@ const SERVICE_ACL_PROTO: &'static str = r#"
             principals: ["authenticated"]
         },
         {
-            path: "/rpc/mocap.MocapCamera"
+            path: "/rpc/mocap.Camera"
             is_directory: true
             principals: ["authenticated"]
         },

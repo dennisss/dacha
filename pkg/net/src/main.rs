@@ -54,25 +54,8 @@ async fn main() -> Result<()> {
 
     return Ok(());
 
-    /*
-    for route in net::netlink::read_routes()? {
-        if route.scope != net::netlink::RouteScope::Universe ||
-            route.typ != net::netlink::RouteType::Unicast ||
-            route.family != net::netlink::InterfaceAddrFamily::INET {
-            continue;
-        }
-
-        println!("{:#?}", route);
-    }
-
-    let ifaces = net::netlink::read_interfaces()?;
-    println!("{:#?}", ifaces);
-
-    return Ok(());
-    */
-
-    let ip = net::netlink::local_ip().await?;
-    println!("My local ip: {:?}", ip.to_string());
+    // let ip = net::netlink::local_ip().await?;
+    // println!("My local ip: {:?}", ip.to_string());
 
 
 

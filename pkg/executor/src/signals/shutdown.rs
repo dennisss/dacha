@@ -110,7 +110,7 @@ impl Drop for ShutdownToken {
 
 #[async_trait]
 impl CancellationToken for ShutdownToken {
-    async fn is_cancelled(&self) -> bool {
+    fn is_cancelled(&self) -> bool {
         self.receiver.is_closed()
     }
 

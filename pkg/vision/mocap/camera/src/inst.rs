@@ -92,7 +92,7 @@ pub(crate) struct CameraSensorData {
 
 struct StatusState {
     cpu_temp: CPUTemperatureReader,
-    accelerometer: Option<LIS2DW12>,
+    accelerometer: Option<Box<dyn Accelerometer>>,
 }
 
 struct ConfigureState {
@@ -137,7 +137,7 @@ impl MocapCamera {
         }
 
         let mut i2c_bus = I2CHostController::open(&config.accelerometer_i2c_device())?;
-        let accelerometer = Some(LIS2DW12::create(i2c_bus.device(0x19)).await?);
+        let accelerometer = Some(create_accelerometer(i2c_bus.device(0x19)).await?);
 
         // TODO: Have all key controls like exposure and analog/digital gains exported to a config file that we can re-initialize everything on boot.
         let mut cam = RP1DirectCamera::open().await?;
@@ -495,7 +495,7 @@ impl MocapCamera {
 }
 
 #[async_trait]
-impl MocapCameraService for MocapCamera {
+impl CameraService for MocapCamera {
 
     async fn Status(
         &self,

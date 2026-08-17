@@ -116,7 +116,7 @@ export class WorldPage extends React.Component<WorldPageProps, WorldPageState> {
     }
 
     async _get_status_once() {
-        let res = await this.props.context.channel.call('mocap.MocapManager', 'Status', {});
+        let res = await this.props.context.channel.call('mocap.Manager', 'Status', {});
         if (!res.status.ok()) {
             throw res.status.toString();
         }
@@ -127,7 +127,7 @@ export class WorldPage extends React.Component<WorldPageProps, WorldPageState> {
     _execute = async (req, done) => {
 
         try {
-            let res = await this.props.context.channel.call('mocap.MocapManager', 'Execute', req);
+            let res = await this.props.context.channel.call('mocap.Manager', 'Execute', req);
             if (!res.status.ok()) {
                 throw res.status.toString();
             }
@@ -143,7 +143,7 @@ export class WorldPage extends React.Component<WorldPageProps, WorldPageState> {
 
         // TODO: Retry everything with exponential backoff.
 
-        let res = this.props.context.channel.call_streaming('mocap.MocapManager', 'ReadTrackedPoints', {
+        let res = this.props.context.channel.call_streaming('mocap.Manager', 'ReadTrackedPoints', {
             max_rate: 30
         });
         // TODO: Check the response status.

@@ -14,7 +14,7 @@ import "pkg/vision/mocap/proto/wanding.proto";
 import "pkg/vision/mocap/proto/simulation.proto";
 import "pkg/vision/mocap/proto/skeleton.proto";
 
-service MocapManager {
+service Manager {
     // Gets the general state of the system.
     //
     // This changes at a low frequency and contains camera/system health
@@ -45,6 +45,8 @@ service MocapManager {
 
 message MocapManagerConfig {
     // Address of the job that contains all of the individual camera workers.
+    //
+    // TODO: This is not longer in use.
     string camera_service = 1;
 
     // Default config to send to all cameras (currently we assume that all cameras are similar)
@@ -72,6 +74,8 @@ message MocapManagerConfig {
 
     SphereProjectionFilter sphere_projection_filter = 13;
 
+    AuxRpcServerConfig aux_rpc_server = 14;
+
     uint64 revision = 11;
 }
 
@@ -94,6 +98,22 @@ message MocapPerCameraConfig {
 
     optional bool enabled = 5;
 }
+
+message AuxRpcServerConfig {
+    uint32 port = 1;
+
+    // If true, the RPC server will attempt (once) to start when the
+    // application first opens.
+    bool autostart = 2;
+}
+
+message AuxRpcServerStatus {
+    bool running = 1;
+
+    // If set, there was an error while trying to start the server.
+    string error = 2;
+}
+
 
 message MocapManagerStatusRequest {
 
@@ -119,7 +139,22 @@ message MocapManagerStatus {
 
     SingleCameraConfigOverride single_camera_override = 6;
 
+    NetworkingStatus networking = 7;
+
+    AuxRpcServerStatus aux_rpc_server = 8;
+
     reserved 3;
+}
+
+message NetworkingStatus {
+    // Network interface name used for the cameras (if one was picked)
+    string iface_name = 1;
+
+    string iface_description = 2;
+
+    bool healthy = 3;
+
+    string error = 4;
 }
 
 message ManagerModeProto {
@@ -250,6 +285,10 @@ message ExecuteRequest {
         DeleteSkeletonCommand delete_skeleton = 20;
 
         SetSkeletonSearchingCommand set_skeleton_searching = 21;
+
+        bool start_aux_rpc_server = 22;
+
+        bool stop_aux_rpc_server = 23;
     }
 }
 

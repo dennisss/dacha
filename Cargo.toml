@@ -166,6 +166,8 @@ members = [
 	"pkg/builder/skylark",
 	"pkg/builder/linker",
 	"pkg/monitoring/logging",
+	"pkg/monitoring/journald",
+	"pkg/monitoring/journald/cli",
 	"pkg/base/radix",
 	"pkg/peripherals/devices/ptouch",
 	"pkg/storage",

@@ -148,14 +148,14 @@ impl CheckerboardCalibrationMode {
         }
     }
 
-    pub fn capture_frame(&self, camera_stub: Arc<MocapCameraStub>) -> impl Future<Output=Result<()>> + 'static {    
+    pub fn capture_frame(&self, camera_stub: Arc<CameraStub >) -> impl Future<Output=Result<()>> + 'static {    
         let shared = self.shared.clone();
         self.start_task(move || Self::capture_frame_task(shared, camera_stub))
     }
 
     async fn capture_frame_task(
         shared: Arc<Shared>,
-        camera_stub: Arc<MocapCameraStub>,
+        camera_stub: Arc<CameraStub >,
     ) -> Result<()> {
 
         let grid_width = 8;

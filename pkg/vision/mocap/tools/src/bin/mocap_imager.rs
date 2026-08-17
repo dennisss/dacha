@@ -34,7 +34,7 @@ async fn main() -> Result<()> {
         image: args.image,
         disk: args.disk,
         hardware_model: Some(match hardware_config.compute_module() {
-            ComputeModuleModel::UNKNOWN => todo!(),
+            ComputeModuleModel::UNKNOWN_CM => todo!(),
             ComputeModuleModel::PI_CM4 | ComputeModuleModel::PI_CM4_LITE => {
                 rpi_imager::HardwareModel::Cm4
             },

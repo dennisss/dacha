@@ -312,29 +312,7 @@ pub async fn run_write_command_ext(cmd: WriteCommand, ext: WriteExtraArgs) -> Re
     }
 
     println!("Reading fs type...");
-    let root_part_fstype_str = {
-        let mut t = String::new();
-
-        for _ in 0..20 {
-
-            let output = std::process::Command::new("lsblk")
-                .args(["-no", "FSTYPE", &format!("{}2", &disk_path.as_str())])
-                .output()?;
-
-            if !output.status.success() {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                println!("lsblk attempt failed: {}", stderr.trim());
-                // Takes some time for the kernel and udev to sync everything.
-                executor::sleep(Duration::from_secs(1)).await?;
-                continue;
-            }
-
-            t = std::str::from_utf8(&output.stdout)?.trim().to_string();
-            break;
-        }
-
-        t
-    };
+    let root_part_fstype_str = get_partition_fstype(LocalPath::new(&format!("{}2", &disk_path.as_str()))).await?;
     println!("=> fs type: {}", root_part_fstype_str);
 
     #[derive(Clone, Copy, PartialEq, Eq)]

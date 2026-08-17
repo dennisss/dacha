@@ -385,7 +385,7 @@ impl ControlToolheadHeaterCommand {
 
         let mut next_control_time = Instant::now();
 
-        while !cancellation_token.is_cancelled().await {
+        while !cancellation_token.is_cancelled() {
             let now = Instant::now();
 
             // TODO: Make sure this is fast.
@@ -508,7 +508,7 @@ impl ToolheadPIDCommand {
 
         let cancellation_token = executor::signals::new_shutdown_token();
 
-        while !cancellation_token.is_cancelled().await {
+        while !cancellation_token.is_cancelled() {
             let now = Instant::now();
             let state = driver.read_state().await?;
 

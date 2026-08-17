@@ -639,3 +639,16 @@ pub fn run(mut builder: WebViewBuilder) -> Result<()> {
 
     Ok(())
 }
+
+pub fn show_error_dialog(title: &str, message: &str) {
+    let title_w = to_wstring(title);
+    let msg_w = to_wstring(message);
+    unsafe {
+        let _ = MessageBoxW(
+            HWND(0 as _),
+            PCWSTR::from_raw(msg_w.as_ptr()),
+            PCWSTR::from_raw(title_w.as_ptr()),
+            MB_ICONERROR | MB_OK,
+        );
+    }
+}

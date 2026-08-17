@@ -141,6 +141,9 @@ async fn run_extract_command(cmd: ExtractCommand) -> Result<()> {
         )?;
     }
 
+    let root_partition_type = rpi_imager::get_partition_fstype(&loop_path).await?;
+    println!("Root Partition Type: {}", root_partition_type);
+
     let root_dir = TempDir::create()?;
     println!(
         "Mounting root filesystem to {}...",
@@ -150,10 +153,10 @@ async fn run_extract_command(cmd: ExtractCommand) -> Result<()> {
         sys::mount(
             Some(loop_path.as_str()),
             root_dir.path().as_str(),
-            Some("btrfs"),
+            Some(&root_partition_type),
             MountFlags::MS_RDONLY | MountFlags::MS_NODEV | MountFlags::MS_NOSUID,
             None,
-        )?;
+        ).map_err(|e| format_err!("mount failed: {}", e))?;
     }
 
     if file::exists(&cmd.output_dir).await? {

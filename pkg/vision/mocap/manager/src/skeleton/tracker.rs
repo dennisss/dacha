@@ -9,6 +9,7 @@ use mocap_proto::mocap::*;
 use math::geometry::bounding_box::*;
 use math::matrix::cwise_binary_ops::CwiseDiv;
 use math::matrix::cwise_binary_ops::{CwiseMulAssign, CwiseDivAssign};
+use math::matrix::cwise_binary_ops::CwiseMul;
 
 use crate::skeleton::inst::*;
 use crate::skeleton::solver::*;
@@ -148,10 +149,10 @@ impl SkeletonTracker {
 
             match &state.mode {
                 Mode::Lost => {
-                    proto.set_mode(SkeletonMode::LOST);
+                    proto.set_mode(SkeletonStateProto_Mode::LOST);
                 }
                 Mode::Searching(searching) => {
-                    proto.set_mode(SkeletonMode::SEARCHING);
+                    proto.set_mode(SkeletonStateProto_Mode::SEARCHING);
                     proto.set_joints(searching.default_joints.to_proto());
 
                     proto.set_calculated_positions(
@@ -160,7 +161,7 @@ impl SkeletonTracker {
                 }
 
                 Mode::Live(live) => {
-                    proto.set_mode(SkeletonMode::LIVE);
+                    proto.set_mode(SkeletonStateProto_Mode::LIVE);
 
                     proto.marker_ids_mut().extend(
                         live.marker_ids.iter().clone().map(|i| i.unwrap_or(0)));

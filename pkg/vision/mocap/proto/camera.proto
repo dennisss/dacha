@@ -19,14 +19,14 @@ message CameraHardwareConfig {
 }
 
 enum ComputeModuleModel {
-    UNKNOWN = 0;
+    UNKNOWN_CM = 0;
     PI_CM4 = 1;
     PI_CM4_LITE = 2;
     PI_CM5 = 3;
     PI_CM5_LITE = 4;
 }
 
-service MocapCamera {
+service Camera {
     rpc Status (StatusRequest) returns (MocapCameraStatus);
 
     rpc Configure (MocapCameraConfigureRequest) returns (ConfigureResponse);

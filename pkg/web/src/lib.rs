@@ -63,7 +63,7 @@ impl WebPageHandler {
     pub async fn create(options: WebPageOptions) -> Result<Self> {
         let vars = json::stringify(options.vars.as_ref().unwrap_or(&json::Value::Null))?;
 
-        let contents = file::read_to_string(project_path!("pkg/web/index.html")).await?;
+        let contents = file::read_asset_to_str("pkg/web/index.html").await?.to_string();
 
         let mut new_page = String::new();
 

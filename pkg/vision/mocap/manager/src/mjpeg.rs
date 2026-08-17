@@ -5,7 +5,7 @@ use common::errors::*;
 use mocap_proto::mocap::*;
 use http::header::CONTENT_TYPE;
 
-pub async fn create_camera_live_stream(stub: Arc<MocapCameraStub>) -> http::Response {
+pub async fn create_camera_live_stream(stub: Arc<CameraStub >) -> http::Response {
 
     // TODO: Limit max rate.
 

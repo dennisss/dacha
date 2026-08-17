@@ -59,33 +59,32 @@ message BoneMarkerProto {
     math.VectorProto position = 3;
 }
 
-enum SkeletonMode {
-    UNKNOWN = 0;
-    
-    // Default state for a skeleton. We don't know where the skeleton currently is
-    // and we are not actively doing any matching for it.
-    LOST = 1;
-
-    // The skeleton state is currently reset to the T-pose at the origin and we are
-    // waiting for a set of points to overlap with it so that we can lock on to the
-    // initial state of the skeleton.
-    SEARCHING = 2;
-
-    // We have a set of labeled markers corresponding to the skeleton and we are
-    // actively following them.
-    //
-    // NOTE: When a skeleton first transitions to 'LIVE', the definition in the
-    // 'SkeletonProto' may change to adjust marker and limb positions to the
-    // point cloud data.
-    LIVE = 3;
-}
-
-
 message SkeletonStateProto {
+    enum Mode {
+        UNKNOWN = 0;
+        
+        // Default state for a skeleton. We don't know where the skeleton currently is
+        // and we are not actively doing any matching for it.
+        LOST = 1;
+
+        // The skeleton state is currently reset to the T-pose at the origin and we are
+        // waiting for a set of points to overlap with it so that we can lock on to the
+        // initial state of the skeleton.
+        SEARCHING = 2;
+
+        // We have a set of labeled markers corresponding to the skeleton and we are
+        // actively following them.
+        //
+        // NOTE: When a skeleton first transitions to 'LIVE', the definition in the
+        // 'SkeletonProto' may change to adjust marker and limb positions to the
+        // point cloud data.
+        LIVE = 3;
+    }
+
     // Id of the skeleton this state is associated with.
     uint32 id = 1;
 
-    SkeletonMode mode = 2;
+    Mode mode = 2;
 
     // There will be a '0' (or out of bounds) for missing ids.
     repeated uint64 marker_ids = 3;    

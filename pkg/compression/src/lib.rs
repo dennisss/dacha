@@ -19,6 +19,7 @@ pub mod deflate;
 pub mod gzip;
 pub mod huffman;
 pub mod readable;
+pub mod writeable;
 mod slice_reader;
 pub mod snappy;
 pub mod tar;

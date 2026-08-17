@@ -248,7 +248,7 @@ impl PacketParser {
                 ParserState::ReadLen => {
                     // Maximum reasonable length check (e.g., 60 bytes)
                     if b > 60 {
-                        eprintln!("BAD LENGTH");
+                        // eprintln!("BAD LENGTH");
 
                         self.reset();
                     } else {

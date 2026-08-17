@@ -66,7 +66,7 @@ impl RecordCommand {
 
         let cancellation_token = executor::signals::new_shutdown_token();
 
-        while !cancellation_token.is_cancelled().await {
+        while !cancellation_token.is_cancelled() {
 
             let buf = capture_stream.dequeue_buffer().await?;
 

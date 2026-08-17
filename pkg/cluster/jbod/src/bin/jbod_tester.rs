@@ -881,7 +881,7 @@ impl TestManagementCommand {
 
         let cancellation_token = executor::signals::new_shutdown_token();
 
-        while !cancellation_token.is_cancelled().await {
+        while !cancellation_token.is_cancelled() {
             let speed = management_device.get_fan_speeds().await?;
 
             println!("Speed: {:?}", speed);

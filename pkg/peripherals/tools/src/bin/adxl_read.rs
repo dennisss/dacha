@@ -124,7 +124,7 @@ async fn main() -> Result<()> {
 
     const CHUNK_SIZE: usize = 4096;
 
-    while !cancellation_token.is_cancelled().await {
+    while !cancellation_token.is_cancelled() {
         let status = adxl.read_byte(FIFO_STATUS)? & 0b111111;
 
         if status > 30 {

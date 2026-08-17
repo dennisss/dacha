@@ -458,7 +458,7 @@ impl<Input: Readable> Reader<Input> {
 
             // Path in the real filesystem at which we will write the extracted file.
             // NOTE: We normalize and re-validate the prefix in case of '..' in the paths.
-            let path = output_dir.join(&relpath).normalized();
+            let path = output_dir.join(&relpath).normalize_lexically()?;
             if !path.starts_with(&output_dir) {
                 return Err(err_msg(
                     "Archive attempted to extract to a path outside the output directory",

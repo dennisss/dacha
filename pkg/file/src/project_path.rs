@@ -1,6 +1,36 @@
+use std::sync::LazyLock;
+
 use common::errors::*;
 
 use crate::LocalPathBuf;
+
+
+static PROJECT_DIR: LazyLock<ProjectDirState> = LazyLock::new(|| {
+    let current_dir = crate::current_dir().unwrap();
+    let mut project_dir = None;
+
+    let mut dir = current_dir.clone();
+    loop {
+        if let Ok(true) = crate::exists_sync(dir.join("WORKSPACE")) {
+            project_dir = Some(dir);
+            break;
+        }
+
+        if !dir.pop() {
+            break;
+        }
+    }
+
+    ProjectDirState {
+        current_dir,
+        project_dir
+    }
+});
+
+struct ProjectDirState {
+    current_dir: LocalPathBuf,
+    project_dir: Option<LocalPathBuf>
+}
 
 /// Gets the root directory of this project (the directory that contains the
 /// 'pkg' and '.git' directory).
@@ -9,22 +39,19 @@ pub fn project_dir() -> LocalPathBuf {
 }
 
 pub fn try_project_dir() -> Result<LocalPathBuf> {
-    let mut dir = crate::current_dir().unwrap();
-
-    loop {
-        if let Ok(true) = crate::exists_sync(dir.join("WORKSPACE")) {
-            return Ok(dir);
-        }
-
-        if !dir.pop() {
-            break;
+    match &PROJECT_DIR.project_dir {
+        Some(v) => return Ok(v.clone()),
+        None => {
+            Err(format_err!(
+                "Failed to find project dir in: {}",
+                PROJECT_DIR.current_dir.display()
+            ))
         }
     }
+}
 
-    Err(format_err!(
-        "Failed to find project dir in: {:?}",
-        crate::current_dir().unwrap()
-    ))
+pub fn maybe_project_dir() -> Option<LocalPathBuf> {
+    PROJECT_DIR.project_dir.clone()
 }
 
 

@@ -184,8 +184,7 @@ impl TransactionalDBClient {
     }
 
     pub async fn close(self) -> Result<()> {
-        self.add_cancellation_token(Arc::new(AlreadyCancelledToken::default()))
-            .await;
+        self.add_cancellation_token(Arc::new(AlreadyCancelledToken::default()));
         self.wait_for_termination(true).await
     }
 

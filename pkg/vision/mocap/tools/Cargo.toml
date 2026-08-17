@@ -23,6 +23,7 @@ math_proto_util = { path = "../../../math/proto/util" }
 protobuf = { path = "../../../protobuf" }
 perf = { path = "../../../perf" }
 protobuf_json = { path = "../../../protobuf/json" }
+protobuf_dynamic = { path = "../../../protobuf/dynamic" }
 rpc = { path = "../../../rpc" }
 net = { path = "../../../net" }
 ptp = { path = "../../../net/ptp" }

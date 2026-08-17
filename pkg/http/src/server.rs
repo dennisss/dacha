@@ -186,11 +186,10 @@ pub struct ServerResource {
 
 #[async_trait]
 impl ServiceResource for ServerResource {
-    async fn add_cancellation_token(&self, token: Arc<dyn CancellationToken>) {
+    fn add_cancellation_token(&self, token: Arc<dyn CancellationToken>) {
         self.shared
             .cancellation_tokens
             .add_cancellation_token(token)
-            .await
     }
 
     async fn new_resource_subscriber(&self) -> Box<dyn ServiceResourceSubscriber> {
@@ -201,13 +200,9 @@ impl ServiceResource for ServerResource {
 // TODO: Standardize this.
 impl Drop for ServerResource {
     fn drop(&mut self) {
-        let shared = self.shared.clone();
-        executor::spawn(async move {
-            shared
-                .cancellation_tokens
-                .add_cancellation_token(Arc::new(AlreadyCancelledToken::default()))
-                .await
-        });
+        self.shared
+            .cancellation_tokens
+            .add_cancellation_token(Arc::new(AlreadyCancelledToken::default()));
     }
 }
 

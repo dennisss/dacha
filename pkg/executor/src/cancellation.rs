@@ -1,13 +1,14 @@
 use alloc::boxed::Box;
 use std::sync::Arc;
 
-use crate::{lock, sync::AsyncVariable};
+use crate::lock;
+use crate::sync::{SyncMutex, Waiters};
 
 /// Object which can be polled to determine if we should stop running some
 /// operation.
 #[async_trait]
 pub trait CancellationToken: 'static + Send + Sync {
-    async fn is_cancelled(&self) -> bool;
+    fn is_cancelled(&self) -> bool;
 
     async fn wait_for_cancellation(&self);
 }
@@ -16,32 +17,45 @@ pub trait CancellationToken: 'static + Send + Sync {
 /// runs the trigger() function on it.
 #[derive(Default)]
 pub struct TriggerableCancellationToken {
-    cancelled: AsyncVariable<bool>,
+    state: SyncMutex<TriggerState>
+}
+
+#[derive(Default)]
+struct TriggerState {
+    cancelled: bool,
+    waiters: Waiters,
 }
 
 impl TriggerableCancellationToken {
-    pub async fn trigger(&self) {
-        lock!(cancelled <= self.cancelled.lock().await.unwrap(), {
-            *cancelled = true;
-            cancelled.notify_all();
-        });
+    pub fn trigger(&self) {
+        self.state.apply(|state| {
+            state.cancelled = true;
+            state.waiters.notify_all();
+        }).unwrap()
     }
 }
 
 #[async_trait]
 impl CancellationToken for TriggerableCancellationToken {
-    async fn is_cancelled(&self) -> bool {
-        *self.cancelled.lock().await.unwrap().read_exclusive()
+    fn is_cancelled(&self) -> bool {
+        self.state.apply(|state| state.cancelled).unwrap()
     }
 
     async fn wait_for_cancellation(&self) {
         loop {
-            let cancelled = self.cancelled.lock().await.unwrap().read_exclusive();
-            if *cancelled {
-                return;
-            }
+            let waiter = self.state.apply(|state| {
+                if state.cancelled {
+                    return None;
+                }
 
-            cancelled.wait().await;
+                Some(state.waiters.new_waiter())
+            }).unwrap();
+
+            if let Some(waiter) = waiter {
+                waiter.await;
+            } else {
+                break;
+            }
         }
     }
 }
@@ -54,7 +68,7 @@ pub struct AlreadyCancelledToken {
 
 #[async_trait]
 impl CancellationToken for AlreadyCancelledToken {
-    async fn is_cancelled(&self) -> bool {
+    fn is_cancelled(&self) -> bool {
         true
     }
 
@@ -76,8 +90,8 @@ impl EitherCancelledToken {
 
 #[async_trait]
 impl CancellationToken for EitherCancelledToken {
-    async fn is_cancelled(&self) -> bool {
-        self.a.is_cancelled().await || self.b.is_cancelled().await
+    fn is_cancelled(&self) -> bool {
+        self.a.is_cancelled() || self.b.is_cancelled()
     }
 
     async fn wait_for_cancellation(&self) {

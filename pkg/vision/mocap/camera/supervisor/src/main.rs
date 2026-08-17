@@ -3,6 +3,8 @@ extern crate common;
 #[macro_use]
 extern crate macros;
 
+mod run;
+
 use std::time::Duration;
 use std::sync::Arc;
 use std::os::unix::process::CommandExt;
@@ -12,6 +14,13 @@ use executor_multitask::RootResource;
 use cluster_client::id::{entity_id_to_string, normalize_entity_id};
 use mocap_proto::mocap::*;
 use file::LocalPath;
+
+
+/*
+TODO: set IP_MULTICAST_IF for outgoing multicast packets
+TODO: Add interface to ADD_MEMBERSHIP for incoming packets.
+
+*/
 
 struct DNSServerHandler {
     camera_id: String,
@@ -127,13 +136,22 @@ impl CameraSupervisorService for CameraSupervisorInst {
         Ok(())
     }
 
+    async fn Run(
+        &self,
+        request: rpc::ServerRequest<CameraSupervisorRunRequest>,
+        response: &mut rpc::ServerResponse<CameraSupervisorRunResponse>
+    ) -> Result<()> {
+        response.value = crate::run::run_command(&request)?;
+        Ok(())
+    }
+
     async fn Update(
         &self,
         mut req_stream: rpc::ServerStreamRequest<UpdateRequest>,
         res_stream: &mut rpc::ServerStreamResponse<UpdateResponse>
     ) -> Result<()> {
 
-        // TODO: Acquire an instance wide lock to prevent duplicate concurrent.
+        // TODO: Acquire an instance wide lock to prevent duplicate concurrent updates.
 
         {
             let req = req_stream.recv().await?
@@ -187,6 +205,15 @@ impl CameraSupervisorService for CameraSupervisorInst {
                 break;
             }
 
+            if req.has_commit_image() {
+
+                /*
+                treat as a sorted tar.gz
+                suppress 
+                */
+                
+            }
+
             return Err(rpc::Status::invalid_argument("Unsupported command type").into());
         }
 
@@ -235,5 +262,4 @@ async fn main() -> Result<()> {
 
     println!("Running...");
     service.wait().await
-
 }

@@ -655,8 +655,7 @@ impl MonitorImpl {
             if want_shutdown && !machine.serial.shutting_down {
                 if let Some(controller) = &machine.serial.controller {
                     controller
-                        .add_cancellation_token(Arc::new(AlreadyCancelledToken::default()))
-                        .await;
+                        .add_cancellation_token(Arc::new(AlreadyCancelledToken::default()));
                     machine.serial.shutting_down = true;
                 }
             }
@@ -828,8 +827,7 @@ impl MonitorImpl {
             if changed && !camera_entry.shutting_down {
                 if let Some(controller) = &camera_entry.controller {
                     controller
-                        .add_cancellation_token(Arc::new(AlreadyCancelledToken::default()))
-                        .await;
+                        .add_cancellation_token(Arc::new(AlreadyCancelledToken::default()));
                     camera_entry.shutting_down = true;
                 }
             }

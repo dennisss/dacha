@@ -31,8 +31,8 @@ struct State {
 
 #[async_trait]
 impl ServiceResource for EmbeddedDBStateMachineDatabase {
-    async fn add_cancellation_token(&self, token: Arc<dyn CancellationToken>) {
-        self.cancellation_tokens.add_cancellation_token(token).await
+    fn add_cancellation_token(&self, token: Arc<dyn CancellationToken>) {
+        self.cancellation_tokens.add_cancellation_token(token)
     }
 
     async fn new_resource_subscriber(&self) -> Box<dyn ServiceResourceSubscriber> {
@@ -49,8 +49,7 @@ impl EmbeddedDBStateMachineDatabase {
         db.add_cancellation_token(Arc::new(EitherCancelledToken::new(
             db_canceller.clone(),
             cancellation_tokens.clone(),
-        )))
-        .await;
+        )));
 
         let mut sub = db.new_resource_subscriber().await;
 
@@ -99,8 +98,7 @@ impl EmbeddedDBStateMachineDatabase {
                 .add_cancellation_token(Arc::new(EitherCancelledToken::new(
                     db_canceller.clone(),
                     self.cancellation_tokens.clone(),
-                )))
-                .await;
+                )));
 
             State {
                 db: new_db,
@@ -129,7 +127,7 @@ impl EmbeddedDBStateMachineDatabase {
         guard.exit();
 
         // Wait for the old database to finish running.
-        state.db_canceller.trigger().await;
+        state.db_canceller.trigger();
         state.db.wait_for_termination(true).await?;
 
         Ok(())

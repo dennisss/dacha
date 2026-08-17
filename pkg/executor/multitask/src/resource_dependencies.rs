@@ -62,7 +62,7 @@ impl ServiceResourceDependencies {
 
         // Cancel dependencies when the parent is done.
         if parent_report.self_state.is_terminal() {
-            self.shared.dep_cancellation_token.trigger().await;
+            self.shared.dep_cancellation_token.trigger();
         }
 
         self.shared.report.update_self(parent_report.self_state, parent_report.self_message).await;
@@ -70,8 +70,7 @@ impl ServiceResourceDependencies {
 
     pub async fn register_dependency(&self, resource: Arc<dyn ServiceResource>) {
         resource
-            .add_cancellation_token(self.shared.dep_cancellation_token.clone())
-            .await;
+            .add_cancellation_token(self.shared.dep_cancellation_token.clone());
 
         let shared = self.shared.clone();
         // spawn a new task to make this whole function cancel safe.

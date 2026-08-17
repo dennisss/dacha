@@ -18,10 +18,9 @@ pub struct ServiceResourceGroup {
 
 #[async_trait]
 impl ServiceResource for ServiceResourceGroup {
-    async fn add_cancellation_token(&self, token: Arc<dyn CancellationToken>) {
+    fn add_cancellation_token(&self, token: Arc<dyn CancellationToken>) {
         self.placeholder_resource
             .add_cancellation_token(token)
-            .await
     }
 
     async fn new_resource_subscriber(&self) -> Box<dyn ServiceResourceSubscriber> {
@@ -61,7 +60,7 @@ impl ServiceResourceGroup {
         let mut dep_subscriber = deps.new_resource_subscriber().await;
 
         loop {
-            if token.is_cancelled().await {
+            if token.is_cancelled() {
                 break;
             }
 

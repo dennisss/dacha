@@ -157,6 +157,14 @@ impl DescriptorPool {
         })
     }
 
+    pub fn all_files(&self) -> Vec<FileDescriptor> {
+        let state = self.shared.state.read().unwrap();
+        state.files.values().map(|desc| FileDescriptor {
+            pool: self.clone(),
+            inner: desc.clone(),
+        }).collect()
+    }
+
     /// Parses a .proto file located in the filesystem and adds it to the pool.
     ///
     /// - If the file already exists in the pool, then it won't be re-added.

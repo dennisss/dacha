@@ -20,7 +20,7 @@ pub trait ServiceResource: 'static + Send + Sync {
     /// cancelled, then it should automatically trigger shutdown.
     ///
     /// NOTE: This is automatically called internally in ServiceResourceGroup.
-    async fn add_cancellation_token(&self, token: Arc<dyn CancellationToken>);
+    fn add_cancellation_token(&self, token: Arc<dyn CancellationToken>);
 
     /// Creates a subscriber which can be used to read the current state of the
     /// resource and wait for future changes.

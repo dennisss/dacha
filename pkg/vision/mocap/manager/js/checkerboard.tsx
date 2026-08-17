@@ -56,7 +56,7 @@ export class CheckerboardPage extends React.Component<CheckerboardPageProps, Che
     }
 
     async _get_status_once() {
-        let res = await this.props.context.channel.call('mocap.MocapManager', 'Status', {});
+        let res = await this.props.context.channel.call('mocap.Manager', 'Status', {});
         if (!res.status.ok()) {
             throw res.status.toString();
         }
@@ -118,7 +118,7 @@ export class CheckerboardPage extends React.Component<CheckerboardPageProps, Che
         try {
             let mode = this.state.status.mode.checkerboard_calibration;
 
-            let res = await this.props.context.channel.call('mocap.MocapManager', 'Execute', {
+            let res = await this.props.context.channel.call('mocap.Manager', 'Execute', {
                 configure_cameras: { camera_id: mode.camera_id, config: data },
             });
             if (!res.status.ok()) {
@@ -141,7 +141,7 @@ export class CheckerboardPage extends React.Component<CheckerboardPageProps, Che
     _execute = async (req, done) => {
 
         try {
-            let res = await this.props.context.channel.call('mocap.MocapManager', 'Execute', req);
+            let res = await this.props.context.channel.call('mocap.Manager', 'Execute', req);
             if (!res.status.ok()) {
                 throw res.status.toString();
             }

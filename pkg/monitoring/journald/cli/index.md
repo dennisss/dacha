@@ -1,0 +1,4 @@
+
+
+
+`journalctl -o json`

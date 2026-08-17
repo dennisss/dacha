@@ -77,7 +77,6 @@ impl Client {
         })
     }
 
-
     pub async fn create_insecure() -> Result<Self> {
         // Bind on a random port and connect to Google Public DNS.
         Self::create_internal(

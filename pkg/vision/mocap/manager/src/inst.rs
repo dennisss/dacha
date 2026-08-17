@@ -36,6 +36,7 @@ use crate::origin::*;
 use crate::recording::*;
 use crate::skeleton::{SkeletonTracker, standard_skeleton};
 use crate::networking::*;
+use crate::aux_rpc_server::*;
 
 const CONFIG_PATCH_FILE: &'static str = "config.pb";
 
@@ -66,6 +67,11 @@ struct Shared {
     tracked_points: BroadcastChannel<Arc<ReadTrackedPointsResponse>>,
     simulator: Option<MocapSimulator>,
     skeleton_search_requests: AsyncMutex<HashMap<u32, bool, FastHasherBuilder>>,
+    
+    // TODO: Need to refactor this since this will hold a cyclic reference to Arc<Shared>
+    // through the service. Minimally we need to ensure that it automatically cleans itself
+    // up when the MocapManager resources are cancelled. 
+    aux_rpc_server: AuxRpcServer,
 }
 
 #[derive(Default)]
@@ -98,7 +104,7 @@ struct CameraEntry {
     ptp_addr: String,
     rpc_addr: String,
 
-    camera_stub: Arc<MocapCameraStub>,
+    camera_stub: Arc<CameraStub >,
 
     ptp_stub: Arc<TimeSyncStub>,
     ptp_leader: bool,
@@ -191,6 +197,7 @@ impl MocapManager {
             tracked_points: BroadcastChannel::default(),
             simulator,
             skeleton_search_requests: Default::default(),
+            aux_rpc_server: Default::default(),
         });
 
         lock!(state <= shared.state.lock().await?, {
@@ -206,7 +213,7 @@ impl MocapManager {
             let camera_id = per_cam.camera_id();
 
             if config.make_dummy_cameras() {
-                let camera_stub = Arc::new(MocapCameraStub::new(
+                let camera_stub = Arc::new(CameraStub ::new(
                     Arc::new(rpc::LocalChannel::new(
                         shared.simulator.as_ref().unwrap().create_camera_service(camera_id)?
                         // Arc::new(mocap_camera::DummyMocapCamera::create(2).await?)
@@ -269,6 +276,8 @@ impl MocapManagerInner {
 
     async fn status_inner(shared: &Shared) -> Result<MocapManagerStatus> {
         let mut proto = MocapManagerStatus::default();
+
+        proto.set_aux_rpc_server(shared.aux_rpc_server.status().await?);
 
         // TODO: Make sure we are consistent about the ordering of locking these.
         let config = shared.config.read().await?;
@@ -763,6 +772,16 @@ impl MocapManagerInner {
                     reqs.insert(cmd.id(), cmd.searching());
                 });
             }
+
+            ExecuteRequestCommandCase::StartAuxRpcServer(_) => {
+                let config = self.shared.config.read().await?;
+                self.shared.aux_rpc_server.start(self.to_service(), config.aux_rpc_server()).await?;
+            }
+
+            ExecuteRequestCommandCase::StopAuxRpcServer(_) => {
+                self.shared.aux_rpc_server.stop().await?;
+            }
+
             ExecuteRequestCommandCase::NOT_SET => {
                 return Err(err_msg("Unknown command"));
             }
@@ -932,6 +951,7 @@ impl MocapManagerInner {
 
                 let mut s = NetworkingStatus::default();
                 s.set_iface_name(resolver.iface_name());
+                s.set_iface_description(resolver.iface_description());
                 s.set_healthy(true);
 
                 state.networking_status = s;
@@ -1014,7 +1034,7 @@ impl MocapManagerInner {
         shared: Arc<Shared>,
         camera_id: u64,
         ptp_stub: Arc<TimeSyncStub>,
-        camera_stub: Arc<MocapCameraStub>
+        camera_stub: Arc<CameraStub >
     ) {
 
         loop {
@@ -1038,7 +1058,7 @@ impl MocapManagerInner {
         shared: Arc<Shared>,
         camera_id: u64,
         ptp_stub: Arc<TimeSyncStub>,
-        camera_stub: Arc<MocapCameraStub>
+        camera_stub: Arc<CameraStub >
     ) -> Result<()> {
 
         // TODO: Seem to be possible for the status page to tell us there are multiple leaders
@@ -1220,7 +1240,7 @@ impl MocapManagerInner {
     ///
     /// TODO: Retry with exponential backoff.
     async fn camera_read_blobs_thread(
-        shared: Arc<Shared>, camera_id: u64, stub: Arc<MocapCameraStub>
+        shared: Arc<Shared>, camera_id: u64, stub: Arc<CameraStub >
     ) -> Result<()> {
         let mut ctx = rpc::ClientRequestContext::default();
         ctx.http.wait_for_ready = true;
@@ -1379,7 +1399,9 @@ impl MocapManagerInner {
 
             // TODO: When doing skeleton tracking, exclude any points found for rigid bodies.
 
-            skeleton_tracker.run(&points);
+            skeleton_tracker.run(blobs_res.frame_timestamp(), &points);
+            skeleton_tracker.backpropagate_predicted_points(&mut matcher);
+            points = matcher.points();
 
 
             let mut res = ReadTrackedPointsResponse::default();
@@ -1409,7 +1431,7 @@ impl MocapManagerInner {
 }
 
 #[async_trait]
-impl MocapManagerService for MocapManagerInner {
+impl ManagerService for MocapManagerInner {
 
     async fn Status(
         &self,

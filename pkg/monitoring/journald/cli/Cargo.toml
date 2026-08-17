@@ -1,0 +1,13 @@
+[package]
+name = "journald_cli"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+sys = { path = "../../../sys" }
+base_error = { path = "../../../base/error" }
+base_util = { path = "../../../base/util" }
+file = { path = "../../../file" }
+executor = { path = "../../../executor" }
+macros = { path = "../../../macros" }
+async-trait = { version = "0.1.50"}

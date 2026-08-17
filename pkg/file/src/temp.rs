@@ -69,7 +69,9 @@ impl TempDir {
 
 impl Drop for TempDir {
     fn drop(&mut self) {
-        std::fs::remove_dir_all(&self.dir).unwrap();
+        if let Err(e) = std::fs::remove_dir_all(&self.dir) {
+            eprintln!("Failed to clean up temp dir: {}: {}", self.dir.display(), e);
+        }
     }
 }
 

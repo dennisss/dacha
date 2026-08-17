@@ -57,7 +57,7 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
     }
 
     async _get_status_once() {
-        let res = await this.props.context.channel.call('mocap.MocapManager', 'Status', {});
+        let res = await this.props.context.channel.call('mocap.Manager', 'Status', {});
         if (!res.status.ok()) {
             throw res.status.toString();
         }
@@ -70,7 +70,7 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
         // TODO: Retry everything with exponential backoff.
 
         // TODO: If we disable all cameras, this should ideally emit some empty frames to update the UI appropriately.
-        let res = this.props.context.channel.call_streaming('mocap.MocapManager', 'ReadBlobs', {
+        let res = this.props.context.channel.call_streaming('mocap.Manager', 'ReadBlobs', {
             // TODO: Maybe constantly increase or make configurable so that the UI looks smoother when debugging.
             max_rate: 10
         });
@@ -92,7 +92,7 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
     _execute = async (req, done) => {
 
         try {
-            let res = await this.props.context.channel.call('mocap.MocapManager', 'Execute', req);
+            let res = await this.props.context.channel.call('mocap.Manager', 'Execute', req);
             if (!res.status.ok()) {
                 throw res.status.toString();
             }
@@ -196,7 +196,7 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
 
                 onClick={async () => {
                     // TODO: Error monitoring.
-                    await this.props.context.channel.call('mocap.MocapManager', 'Execute', {
+                    await this.props.context.channel.call('mocap.Manager', 'Execute', {
                         select_camera: (active ? 0 : camera.id)
                     });
                     this._get_status_once()
@@ -252,7 +252,7 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
         let data = deep_copy(this.state.pending_config);
 
         try {
-            let res = await this.props.context.channel.call('mocap.MocapManager', 'Execute', {
+            let res = await this.props.context.channel.call('mocap.Manager', 'Execute', {
                 configure_cameras: { config: data },
             });
             if (!res.status.ok()) {
@@ -416,7 +416,7 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
                                 }}
                                 onClick={async () => {
                                     // TODO: Error monitoring.
-                                    await this.props.context.channel.call('mocap.MocapManager', 'Execute', {
+                                    await this.props.context.channel.call('mocap.Manager', 'Execute', {
                                         select_camera: (active ? 0 : camera.id)
                                     });
                                     this._get_status_once()

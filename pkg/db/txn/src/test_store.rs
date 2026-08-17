@@ -145,8 +145,7 @@ impl Drop for TestMetastore {
         executor::spawn(async move {
             // TODO: Deduplicate with below.
             resource
-                .add_cancellation_token(Arc::new(AlreadyCancelledToken::default()))
-                .await;
+                .add_cancellation_token(Arc::new(AlreadyCancelledToken::default()));
             resource.wait_for_termination(true).await;
         });
     }
@@ -162,8 +161,7 @@ impl TestMetastore {
         println!("< Node #{} closing... >", self.index);
 
         self.resource
-            .add_cancellation_token(Arc::new(AlreadyCancelledToken::default()))
-            .await;
+            .add_cancellation_token(Arc::new(AlreadyCancelledToken::default()));
         self.resource.wait_for_termination(true).await
     }
 

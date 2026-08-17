@@ -1,0 +1,24 @@
+[package]
+name = "journald"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+sys = { path = "../../sys" }
+base_error = { path = "../../base/error" }
+base_util = { path = "../../base/util" }
+file = { path = "../../file" }
+executor = { path = "../../executor" }
+macros = { path = "../../macros" }
+async-trait = { version = "0.1.50"}
+
+[build-dependencies]
+bindgen = "0.63.0"
+automata = { path = "../../automata" }
+regexp_macros = { path = "../../automata/regexp_macros" }
+pkg-config = "0.3.26"
+
+[features]
+default = ["std"]
+alloc = []
+std = ["alloc"]

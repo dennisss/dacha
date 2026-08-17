@@ -6,7 +6,8 @@ use std::ffi::{CStr, CString};
 use std::os::raw::{c_int, c_void};
 use std::ptr;
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicPtr, Ordering};
+use std::sync::atomic::{AtomicPtr, Ordering, AtomicUsize};
+use std::time::Instant;
 
 use base_error::*;
 use common::hash::FastHasherBuilder;
@@ -23,8 +24,13 @@ pub(crate) struct LinuxProxyInner {
     pub(crate) web_view: AtomicPtr<c_void>,
     pub(crate) window: AtomicPtr<c_void>,
     pub(crate) main_thread: std::thread::ThreadId,
-    pub(crate) requests: Mutex<HashMap<String, usize, FastHasherBuilder>>,
-    pub(crate) request_counter: std::sync::atomic::AtomicUsize,
+    pub(crate) requests: Mutex<HashMap<String, Request, FastHasherBuilder>>,
+    pub(crate) request_counter: AtomicUsize,
+}
+
+struct Request {
+    ptr: usize,
+    start_time: Instant,
 }
 
 impl LinuxProxyInner {
@@ -105,7 +111,12 @@ pub struct WebViewProxy {
 
 enum GuiTask {
     EvalJs(String),
-    SendResponse { request_id: String, status_code: u16, mime_type: String, body: Vec<u8> },
+    SendResponse {
+        request_id: String,
+        status_code: u16,
+        mime_type: String,
+        body: Vec<u8>,
+    },
     OpenFileDialog {
         title: String,
         sender: std::sync::mpsc::Sender<Result<Option<String>>>,
@@ -143,7 +154,7 @@ extern "C" fn idle_task_cb(data: *mut c_void) -> c_int {
                     requests.remove(&request_id)
                 };
                 if let Some(req_val) = req_ptr {
-                    let request = req_val as *mut c_void;
+                    let request = req_val.ptr as *mut c_void;
                     let len = body.len();
                     let stream = g_memory_input_stream_new();
                     if len > 0 {
@@ -159,6 +170,8 @@ extern "C" fn idle_task_cb(data: *mut c_void) -> c_int {
                     // Status code is intentionally ignored in legacy WebKit C-API because it lacks a response object
                     let mime_cstr = CString::new(mime_type).unwrap_or_else(|_| CString::new("application/octet-stream").unwrap());
                     webkit_uri_scheme_request_finish(request, stream, len as i64, mime_cstr.as_ptr());
+
+                    // println!("Response sent in {:?}", Instant::now() - req_val.start_time);
                 }
             }
             GuiTask::OpenFileDialog { title, sender } => {
@@ -282,6 +295,7 @@ extern "C" fn on_script_msg(_ucm: *mut c_void, js_result: *mut c_void, user_data
 }
 
 extern "C" fn on_request_cb(request: *mut c_void, user_data: *mut c_void) {
+    let start_time = Instant::now();
     unsafe {
         if user_data.is_null() {
             return;
@@ -302,7 +316,7 @@ extern "C" fn on_request_cb(request: *mut c_void, user_data: *mut c_void) {
         let req_val = request as usize;
         {
             let mut requests = handle.proxy.inner.requests.lock().unwrap();
-            requests.insert(request_id.clone(), req_val);
+            requests.insert(request_id.clone(), Request { ptr: req_val, start_time });
         }
 
         handler(handle.clone(), request_id, uri_str);
@@ -323,7 +337,7 @@ pub fn run(mut builder: WebViewBuilder) -> Result<()> {
         window: AtomicPtr::new(ptr::null_mut()),
         main_thread: std::thread::current().id(),
         requests: Default::default(),
-        request_counter: std::sync::atomic::AtomicUsize::new(0),
+        request_counter: AtomicUsize::new(0),
     });
 
     let proxy = WebViewProxy { inner: inner.clone() };
@@ -388,6 +402,8 @@ pub fn run(mut builder: WebViewBuilder) -> Result<()> {
             webkit_settings_set_disable_web_security(settings, 1);
             webkit_settings_set_allow_file_access_from_file_urls(settings, 1);
             webkit_settings_set_allow_universal_access_from_file_urls(settings, 1);
+            webkit_settings_set_enable_webgl(settings, 1);
+            webkit_settings_set_hardware_acceleration_policy(settings, 1); // 1 = WEBKIT_HARDWARE_ACCELERATION_POLICY_ALWAYS
             if is_devtools {
                 webkit_settings_set_enable_developer_extras(settings, 1);
             }
@@ -467,4 +483,35 @@ pub fn run(mut builder: WebViewBuilder) -> Result<()> {
     }
 
     Ok(())
+}
+
+pub fn show_error_dialog(title: &str, message: &str) {
+    let zenity = std::process::Command::new("zenity")
+        .arg("--error")
+        .arg("--title")
+        .arg(title)
+        .arg("--text")
+        .arg(message)
+        .output();
+        
+    if let Ok(output) = zenity {
+        if output.status.success() {
+            return;
+        }
+    }
+    
+    let kdialog = std::process::Command::new("kdialog")
+        .arg("--error")
+        .arg(message)
+        .arg("--title")
+        .arg(title)
+        .output();
+        
+    if let Ok(output) = kdialog {
+        if output.status.success() {
+            return;
+        }
+    }
+    
+    eprintln!("Error: {}\n{}", title, message);
 }

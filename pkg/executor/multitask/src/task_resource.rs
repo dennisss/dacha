@@ -23,13 +23,9 @@ struct Shared {
 // TODO: Maybe implement this as part of the CancellationTokenSet drop
 impl Drop for TaskResource {
     fn drop(&mut self) {
-        let shared = self.shared.clone();
-        executor::spawn(async move {
-            shared
-                .cancellation_tokens
-                .add_cancellation_token(Arc::new(AlreadyCancelledToken::default()))
-                .await
-        });
+        self.shared
+            .cancellation_tokens
+            .add_cancellation_token(Arc::new(AlreadyCancelledToken::default()))
     }
 }
 
@@ -89,11 +85,10 @@ impl TaskResource {
 
 #[async_trait]
 impl ServiceResource for TaskResource {
-    async fn add_cancellation_token(&self, token: Arc<dyn CancellationToken>) {
+    fn add_cancellation_token(&self, token: Arc<dyn CancellationToken>) {
         self.shared
             .cancellation_tokens
-            .add_cancellation_token(token)
-            .await;
+            .add_cancellation_token(token);
     }
 
     async fn new_resource_subscriber(&self) -> Box<dyn ServiceResourceSubscriber> {

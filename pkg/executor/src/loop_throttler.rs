@@ -47,7 +47,7 @@ impl LoopThrottler {
         )
         .await;
 
-        !cancellation_token.is_cancelled().await
+        !cancellation_token.is_cancelled()
     }
 }
 

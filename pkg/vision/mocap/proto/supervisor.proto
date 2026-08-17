@@ -5,6 +5,8 @@ package mocap;
 service CameraSupervisor {
     rpc Status (CameraSupervisorStatusRequest) returns (CameraSupervisorStatusResponse);
 
+    rpc Run (CameraSupervisorRunRequest) returns (CameraSupervisorRunResponse);
+
     // - One response will be sent per request.
     // - At most one 'Update' RPC can be active on the server at a time.
     rpc Update (stream UpdateRequest) returns (stream UpdateResponse);
@@ -25,6 +27,8 @@ message UpdateRequest {
         bytes payload_chunk = 2;
 
         bool commit_deb = 3;
+
+        CommitImageCommand commit_image = 4;
     }
 }
 
@@ -32,8 +36,23 @@ message StartUpdateCommand {
 
 }
 
+message CommitImageCommand {
+    // string image_id = 1;    
+}
+
 message UpdateResponse {
     bool commited = 1;
 
     float commit_progress = 2;
+}
+
+
+message CameraSupervisorRunRequest {
+    string command = 1;
+}
+
+message CameraSupervisorRunResponse {
+    bytes stdout = 1;
+    bytes stderr = 2;
+    bool success = 3;
 }

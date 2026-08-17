@@ -75,8 +75,7 @@ impl TestDB {
 
         // Closing the old database.
         self.db
-            .add_cancellation_token(Arc::new(AlreadyCancelledToken::default()))
-            .await;
+            .add_cancellation_token(Arc::new(AlreadyCancelledToken::default()));
         self.db.wait_for_termination(true).await?;
         drop(self.db);
 

@@ -32,6 +32,12 @@ pub mod sync;
 pub mod temp;
 mod utils;
 
+mod data_dir;
+pub use data_dir::*;
+
+mod embedded;
+pub use embedded::*;
+
 #[cfg(target_os = "linux")]
 pub use copy::*;
 pub use error::*;

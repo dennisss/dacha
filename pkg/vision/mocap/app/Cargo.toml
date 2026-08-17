@@ -24,6 +24,7 @@ reflection = { path = "../../../reflection" }
 rpc_util = { path = "../../../rpc/util" }
 mocap_proto = { path = "../proto" }
 mocap_manager = { path = "../manager" }
+crypto = { path = "../../../crypto" }
 
 [build-dependencies]
 common = { path = "../../../common" }

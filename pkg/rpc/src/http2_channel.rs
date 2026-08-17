@@ -114,8 +114,8 @@ struct Shared {
 // Passthrough to self.shared.client
 #[async_trait]
 impl ServiceResource for Http2Channel {
-    async fn add_cancellation_token(&self, token: Arc<dyn CancellationToken>) {
-        self.shared.client.add_cancellation_token(token).await
+    fn add_cancellation_token(&self, token: Arc<dyn CancellationToken>) {
+        self.shared.client.add_cancellation_token(token)
     }
 
     async fn new_resource_subscriber(&self) -> Box<dyn ServiceResourceSubscriber> {

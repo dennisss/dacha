@@ -87,7 +87,7 @@ pub enum MatchingWindowOptions {
 pub struct Deflater {
     /// A sliding window of all previous input data that has already been
     /// compressed.
-    window: Box<dyn MatchingWindow + Send>,
+    window: Box<dyn MatchingWindow + Send + Sync>,
 
     /// Uncompressed input buffer. Will accumulate until we have enough to run
     /// compression
@@ -122,7 +122,7 @@ impl Deflater {
         // TODO: Move this logic elsewhere.
         // TODO: We need to validate the max match length against what is supported by
         // deflate.
-        let window: Box<dyn MatchingWindow + Send> = match options.window {
+        let window: Box<dyn MatchingWindow + Send + Sync> = match options.window {
             MatchingWindowOptions::TrigramChain(options) => {
                 Box::new(TrigramChainMatchingWindow::new(buffer, options))
             }

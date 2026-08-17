@@ -58,7 +58,7 @@ const SERVICE_ACL_PROTO: &'static str = r#"
             principals: ["authenticated"]
         },
         {
-            path: "/rpc/mocap.MocapManager"
+            path: "/rpc/mocap.Manager"
             is_directory: true
             principals: ["authenticated"]
         }

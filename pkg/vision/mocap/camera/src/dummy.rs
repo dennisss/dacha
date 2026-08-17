@@ -60,7 +60,7 @@ impl DummyMocapCamera {
 
 
 #[async_trait]
-impl MocapCameraService for DummyMocapCamera {
+impl CameraService for DummyMocapCamera {
 
     async fn Status(
         &self,

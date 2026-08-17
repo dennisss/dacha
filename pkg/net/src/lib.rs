@@ -34,6 +34,7 @@ mod utils;
 #[cfg(target_os = "linux")]
 pub mod udev;
 mod lookup;
+mod socket;
 
 pub use ip_syntax::parse_port;
 #[cfg(target_os = "linux")]

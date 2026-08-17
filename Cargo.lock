@@ -2641,6 +2641,36 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49f1f14873335454500d59611f1cf4a4b0f786f9ac11f4312a78e4cf2566695b"
 
 [[package]]
+name = "journald"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "automata",
+ "base_error",
+ "base_util",
+ "bindgen 0.63.0",
+ "executor",
+ "file",
+ "macros",
+ "pkg-config",
+ "regexp_macros",
+ "sys",
+]
+
+[[package]]
+name = "journald_cli"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "base_error",
+ "base_util",
+ "executor",
+ "file",
+ "macros",
+ "sys",
+]
+
+[[package]]
 name = "js-sys"
 version = "0.3.49"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3374,6 +3404,7 @@ dependencies = [
  "pio_rp1",
  "protobuf",
  "protobuf_builtins",
+ "protobuf_dynamic",
  "protobuf_json",
  "ptp",
  "ptp_proto",
