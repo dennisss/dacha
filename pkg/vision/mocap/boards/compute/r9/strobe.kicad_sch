@@ -398,9 +398,9 @@
 			(embedded_fonts no)
 		)
 	)
-	(text "Pull down resistor value mainly effects how quickly the strobe\nturns off which generally doesn't matter so we use a weak resistor.\n(this also means less current flow in the case of a short)\n\n10k resistor should yield <50ns propagation delay."
+	(text "Pull down should be weak so\non/off times are fast."
 		(exclude_from_sim no)
-		(at 199.136 81.788 0)
+		(at 183.896 80.264 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -1032,7 +1032,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "10K"
+		(property "Value" "1K"
 			(at 158.75 81.2799 0)
 			(effects
 				(font

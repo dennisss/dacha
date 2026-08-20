@@ -2315,6 +2315,11 @@ files: [
         sha256_sum: "e344aa731bb4cf91b6b8165303ed86ceb563c9054a7a87bd28d494521b2b71e1"
     },
     {
+        path: "pkg/vision/mocap/boards/compute/r10/plot.zip"
+        size: 194755
+        sha256_sum: "f162fa467bbf800d36f41e7bc7d167e42b08390788ac5fae44b05f22d4dba02d"
+    },
+    {
         path: "pkg/vision/mocap/boards/compute/r2/plot.zip"
         size: 182915
         sha256_sum: "fa3c2e789620d89820c575678dc7c4d168c7dbb580e02aa12c26b458412d87b1"
@@ -2343,6 +2348,11 @@ files: [
         path: "pkg/vision/mocap/boards/compute/r8/plot.zip"
         size: 197238
         sha256_sum: "f0dd3f4c165fc1c32cc5eadb7d149adfde8542cb5d28ebe09df61c0d3d75b29a"
+    },
+    {
+        path: "pkg/vision/mocap/boards/compute/r9/plot.zip"
+        size: 194121
+        sha256_sum: "5095dad633b1d582a4e8e3f370903f6baf785c4659a0a78ec95a4664e17f031e"
     },
     {
         path: "pkg/vision/mocap/boards/led/r1/plot.zip"

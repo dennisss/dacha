@@ -1463,12 +1463,6 @@
 		)
 		(uuid "fca26377-b774-4ba2-9dcb-e01929b6b633")
 	)
-	(junction
-		(at 226.06 133.35)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "4d361d27-8eca-41a6-9a98-276bd8910b4a")
-	)
 	(no_connect
 		(at 124.46 128.27)
 		(uuid "0cc4e2d3-72e0-4519-a7b2-583e84e3b994")
@@ -1527,16 +1521,6 @@
 	)
 	(wire
 		(pts
-			(xy 226.06 142.24) (xy 226.06 144.78)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "009bf583-dec5-420a-aea2-ae36988b5b54")
-	)
-	(wire
-		(pts
 			(xy 223.52 85.09) (xy 223.52 86.36)
 		)
 		(stroke
@@ -1557,7 +1541,7 @@
 	)
 	(wire
 		(pts
-			(xy 215.9 133.35) (xy 226.06 133.35)
+			(xy 215.9 133.35) (xy 228.6 133.35)
 		)
 		(stroke
 			(width 0)
@@ -1604,26 +1588,6 @@
 			(type default)
 		)
 		(uuid "9ab85a34-25bb-40f5-9b0c-b13024424148")
-	)
-	(wire
-		(pts
-			(xy 226.06 133.35) (xy 226.06 137.16)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "9b29ef57-94bb-47be-a5b5-55bebfd1dbe8")
-	)
-	(wire
-		(pts
-			(xy 226.06 133.35) (xy 228.6 133.35)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "a7625bd1-c80a-4df2-98ac-c26c01233c40")
 	)
 	(wire
 		(pts
@@ -2495,76 +2459,6 @@
 		)
 	)
 	(symbol
-		(lib_id "Device:C_Small")
-		(at 226.06 139.7 180)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "6a3f03ec-0d9a-40c3-b817-c0a71bb8ee6f")
-		(property "Reference" "C9"
-			(at 228.6 138.4235 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify right)
-			)
-		)
-		(property "Value" "0.1uF 6.6V"
-			(at 228.6 140.9635 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify right)
-			)
-		)
-		(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
-			(at 226.06 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 226.06 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Unpolarized capacitor, small symbol"
-			(at 226.06 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "2"
-			(uuid "38eb2930-a02b-4029-b265-cce95e459538")
-		)
-		(pin "1"
-			(uuid "0cc51887-9c67-4ba6-90c4-94617ae1fd01")
-		)
-		(instances
-			(project "board-latest"
-				(path "/07db8977-6a06-4c60-94f6-b57660c455bf/85922700-6366-4e41-a4bf-c6411d8c7585"
-					(reference "C9")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
 		(lib_id "power:GND")
 		(at 223.52 86.36 0)
 		(unit 1)
@@ -2761,72 +2655,6 @@
 			(project "board-latest"
 				(path "/07db8977-6a06-4c60-94f6-b57660c455bf/85922700-6366-4e41-a4bf-c6411d8c7585"
 					(reference "C29")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:GND")
-		(at 226.06 144.78 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "8e3bee7a-cd06-487d-9a84-0fc3265f5175")
-		(property "Reference" "#PWR096"
-			(at 226.06 151.13 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "GND"
-			(at 226.06 149.86 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 226.06 144.78 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 226.06 144.78 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
-			(at 226.06 144.78 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "3a0af5f5-aa1e-4e54-a1cd-13ab5d00f15f")
-		)
-		(instances
-			(project "board-latest"
-				(path "/07db8977-6a06-4c60-94f6-b57660c455bf/85922700-6366-4e41-a4bf-c6411d8c7585"
-					(reference "#PWR096")
 					(unit 1)
 				)
 			)
