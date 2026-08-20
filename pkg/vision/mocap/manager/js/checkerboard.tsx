@@ -273,10 +273,10 @@ export class CheckerboardPage extends React.Component<CheckerboardPageProps, Che
 
         let num_frames = (mode.frames || []).length;
 
-        let image_source = "/camera?id=" + entity_id_to_string(mode.camera_id);
+        let image_source = { camera_id: mode.camera_id };
         let points = [];
         if (!this.state.live && this.state.frame_index < num_frames) {
-            image_source = mode.frames[this.state.frame_index].image_path;
+            image_source = { url: mode.frames[this.state.frame_index].image_path };
 
             points = (mode.frames[this.state.frame_index].points_2d || []).map((pt) => {
                 return {
@@ -290,7 +290,7 @@ export class CheckerboardPage extends React.Component<CheckerboardPageProps, Che
         }
 
         return (
-            <FrameViewer url={image_source} points={points} flipX={flip_x} flipY={flip_y} />
+            <FrameViewer image_source={image_source} points={points} flipX={flip_x} flipY={flip_y} channel={this.props.context.channel} />
         );
     }
 

@@ -62,12 +62,6 @@ cp build/bcm2712/arch/arm64/boot/dts/overlays/*.dtb* build/out/boot/firmware/ove
 
 ## Generating Debian Package (non-standard combined package)
 
-# 'dpkg' always tries to make backup links of old files when upgrading packages
-# (which isn't supported on FAT32), so /boot/firmware files must be deployed first
-# to the root partition.
-mkdir -p build/out/opt/linux
-mv build/out/boot/firmware build/out/opt/linux
-
 mkdir -p build/out/DEBIAN
 
 cat <<EOF > build/out/DEBIAN/control
@@ -80,37 +74,43 @@ Maintainer: Dennis
 Description: Customized kernel for Raspberry Pis.
 EOF
 
-cat <<'EOF' > build/out/DEBIAN/postinst
+# 'dpkg' always tries to make backup links of old files when upgrading packages
+# (which isn't supported on FAT32), so /boot/firmware files need to be deleted
+# before we start the upgrade.
+
+FIRMWARE_FILES=""
+if [ -d "build/out/boot/firmware" ]; then
+    FIRMWARE_FILES=$(cd build/out && find boot/firmware -type f | sed 's|^|/|')
+fi
+
+# Generate the preinst script. 
+# We use an unquoted EOF here so that $FIRMWARE_FILES evaluates right now during the build, 
+# while escaping \$1 and \$FILE so they evaluate later during dpkg execution.
+cat <<EOF > build/out/DEBIAN/preinst
 #!/bin/sh
 set -e
 
-STAGING_DIR="/opt/linux/firmware"
-TARGET_DIR="/boot/firmware"
+# Auto-generated list of files destined for FAT32
+FILES="
+$FIRMWARE_FILES
+"
 
-if [ "$1" = "configure" ]; then
-    echo "Deploying kernel files and hardware overlays to $TARGET_DIR..."
-    
-    if [ -d "$STAGING_DIR" ]; then
-        cd "$STAGING_DIR"
-        
-        # Find all files in staging and mirror them to the FAT32 target
-        find . -type f | while read -r FILE; do
-            # Strip the leading './' from find output
-            CLEAN_PATH="${FILE#./}"
-            TARGET_FILE="$TARGET_DIR/$CLEAN_PATH"
-            TARGET_SUBDIR=$(dirname "$TARGET_FILE")
-            
-            # Ensure the target directory structure exists (e.g., /boot/firmware/overlays)
-            mkdir -p "$TARGET_SUBDIR"
-            
-            # Remove the existing file first to guarantee a clean overwrite on FAT32
-            rm -f "$TARGET_FILE"
-            
-            # Copy the new file into place
-            cp "$FILE" "$TARGET_FILE"
-        done
-    fi
+if [ "\$1" = "install" ] || [ "\$1" = "upgrade" ]; then
+    for FILE in \$FILES; do
+        # Ignore empty strings resulting from formatting
+        if [ -n "\$FILE" ] && [ -f "\$FILE" ]; then
+            # Delete the file before dpkg tries to overwrite it and triggers a hard-link error
+            rm -f "\$FILE"
+        fi
+    done
 fi
+
+exit 0
+EOF
+
+cat <<'EOF' > build/out/DEBIAN/postinst
+#!/bin/sh
+set -e
 
 # Run depmod for all installed kernel module directories
 for kver in /lib/modules/*; do
@@ -121,31 +121,7 @@ for kver in /lib/modules/*; do
 done
 EOF
 
-cat <<'EOF' > build/out/DEBIAN/prerm
-#!/bin/sh
-set -e
-
-STAGING_DIR="/opt/linux/firmware"
-TARGET_DIR="/boot/firmware"
-
-# Triggered when the package is removed or about to be upgraded
-if [ "$1" = "remove" ] || [ "$1" = "upgrade" ]; then
-    echo "Cleaning up hardware overlays from $TARGET_DIR..."
-    
-    if [ -d "$STAGING_DIR" ]; then
-        cd "$STAGING_DIR"
-        
-        find . -type f | while read -r FILE; do
-            CLEAN_PATH="${FILE#./}"
-            rm -f "$TARGET_DIR/$CLEAN_PATH"
-        done
-    fi
-fi
-
-exit 0
-EOF
-
+chmod 755 build/out/DEBIAN/preinst
 chmod 755 build/out/DEBIAN/postinst
-chmod 755 build/out/DEBIAN/prerm
 
 dpkg-deb --root-owner-group --build build/out build/linux-kernel-dacha-rpi-arm64.deb

@@ -150,6 +150,8 @@ async fn main() -> Result<()> {
             Arc::new(CameraHardwareConfigContainer::new(proto))
         };
 
+        net::enable_hardware_timestamp_filters(&hardware_config.ptp_interface())?;
+
         // TODO: Need to ensure that the device matches the interface.
         let mut ptp_device = Arc::new(ptp::PTPDevice::open_default()?);
         // TODO: Should be conditional on whether it is expected to be available.

@@ -37,6 +37,7 @@ use crate::recording::*;
 use crate::skeleton::{SkeletonTracker, standard_skeleton};
 use crate::networking::*;
 use crate::aux_rpc_server::*;
+use crate::side_channel::*;
 
 const CONFIG_PATCH_FILE: &'static str = "config.pb";
 
@@ -86,7 +87,9 @@ struct State {
 
     mode: Mode,
 
-    networking_status: NetworkingStatus
+    networking_status: NetworkingStatus,
+
+    side_channel: Option<Arc<DataSideChannel>>,
 }
 
 struct CameraConfigState {
@@ -261,6 +264,13 @@ impl MocapManager {
                 shared
             }
         })
+    }
+
+    pub async fn set_side_channel(&self, side_channel: Arc<DataSideChannel>) -> Result<()> {
+        lock!(state <= self.shared.state.lock().await?, {
+            state.side_channel = Some(side_channel);
+        });
+        Ok(())
     }
 }
 
@@ -1485,7 +1495,7 @@ impl ManagerService for MocapManagerInner {
         &self,
         request: rpc::ServerRequest<ReadTrackedPointsRequest>,
         response: &mut rpc::ServerStreamResponse<ReadTrackedPointsResponse>
-    ) -> Result<()> {        
+    ) -> Result<()> {
 
         // TODO: Need some logging if we ever drop frames
         let mut subscriber = self.shared.tracked_points.subscribe(1024);
@@ -1511,6 +1521,55 @@ impl ManagerService for MocapManagerInner {
 
         Ok(())
     }
+
+    async fn ReadFrames(
+        &self,
+        request: rpc::ServerRequest<ReadFramesRequest>,
+        response: &mut rpc::ServerStreamResponse<ReadFramesResponse>
+    ) -> Result<()> {
+        // TODO: Need to ensure there is only one ReadFrames request to each camera per Manager (and ideally we hide errors from clients).
+        
+        let camera_id = request.camera_id();
+
+        let stub = lock!(state <= self.shared.state.lock().await.unwrap(), {
+            let camera = match state.cameras.get(&camera_id) {
+                Some(v) => v,
+                None => return None
+            };
+
+            Some(camera.camera_stub.clone())
+        });
+
+        let stub = match stub {
+            Some(v) => v,
+            None => return Err(err_msg("Unknown camera"))
+        };
+
+        let mut channel: Option<Arc<DataSideChannel>> = None;
+        if request.side_channel_id() != 0 {
+            let c = lock!(state <= self.shared.state.lock().await.unwrap(), {
+                state.side_channel.clone()
+            });
+            channel = Some(c.ok_or_else(|| err_msg("Missing side channel"))?);
+        }
+
+        let req = ReadFramesRequest::default();
+        let ctx = rpc::ClientRequestContext::default();
+
+        let mut res_stream = stub.ReadFrames(&ctx, &req).await;
+
+        while let Some(res) = res_stream.recv().await {
+            if let Some(channel) = &channel {
+                channel.push(request.side_channel_id(), res.mjpeg().into()).await?;
+            } else {
+                response.send(res).await?;
+            }
+        }
+
+        res_stream.finish().await?;
+        Err(err_msg("Unexpected end to frames stream"))
+    }
+
 }
 
 

@@ -1,4 +1,4 @@
-# Motion Capture : Host Software Design
+# Optical Motion Capture : Host Software Design
 
 This page covers important details about the design of the software running on the host machine to combine the data from many cameras.
 

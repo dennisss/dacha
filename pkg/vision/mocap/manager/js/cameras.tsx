@@ -280,7 +280,7 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
             frame_text = 'Frame: ' + this.state.blobs.frame_timestamp;
 
             let frame_cams = (this.state.blobs.cameras || []).length;
-            let total_nums = status.cameras.length;
+            let total_nums = (status.cameras || []).length;
 
             frame_text += ' | ' + frame_cams + ' / ' + total_nums + ' cameras'
         }
@@ -398,9 +398,9 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
                         }
 
 
-                        let url = null;
+                        let image_source = undefined;
                         if (this.state.show_grayscale) {
-                            url = "/camera?id=" + entity_id_to_string(camera.id);
+                            image_source = { camera_id: camera.id };
                         }
 
                         // TODO: Integrate the loading opacity change into the FrameViewer since that has a separate one for image loading.
@@ -428,7 +428,7 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
                                     overflow: 'hidden',
                                     boxShadow: (active ? '0px 0px 10px #08f' : '')
                                 }}>
-                                    <FrameViewer url={url} points={points} flipX={flip_x} flipY={flip_y} is_live_stream={true} controls_enabled={active} show_crosshair={this.state.show_crosshair} />
+                                    <FrameViewer image_source={image_source} points={points} flipX={flip_x} flipY={flip_y} controls_enabled={active} show_crosshair={this.state.show_crosshair} channel={this.props.context.channel} />
                                 </div>
                             </div>
                         );

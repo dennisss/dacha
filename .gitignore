@@ -12,7 +12,6 @@
 
 node_modules
 .DS_Store
-dist/*
 /built
 /built-config
 /built-rust

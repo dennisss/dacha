@@ -11,6 +11,8 @@ Some implementation notes on this:
 
 import { SpinnerInline } from "pkg/web/lib/spinner";
 import React from "react";
+import { CameraLiveFrameSource } from "./live";
+import { Channel } from "pkg/web/lib/rpc";
 
 interface Point {
     x: number;
@@ -20,22 +22,43 @@ interface Point {
     angle: number;
 }
 
-export class FrameViewer extends React.Component<{ url: string; is_live_stream: boolean; controls_enabled: boolean; flipX: boolean; flipY: boolean; points: Point[]; show_crosshair?: boolean }> {
+interface FrameViewerProps {
+    image_source?: ImageSource;
+    controls_enabled: boolean;
+    flipX: boolean;
+    flipY: boolean;
+    points: Point[];
+    show_crosshair?: boolean;
+    channel?: Channel
+}
+
+interface ImageSource {
+    url?: string,
+    camera_id?: string
+}
+
+export class FrameViewer extends React.Component<FrameViewerProps> {
 
     state = {
         transform: { scale: 1, tx: 0, ty: 0 },
         is_dragging: false,
         drag_start: { x: 0, y: 0 },
+        moved: false,
+
+        // This is the current URL we should have the HTML try to render.
         img_src: '',
+        // Whether or not we are still loading the next frame (currently stays
+        // false after the first frame for a source is loaded).
         is_loading: false,
-        moved: false
     };
 
     container_ref = React.createRef();
 
+    source_inst: CameraLiveFrameSource | null = null;
+
 
     componentDidMount() {
-        this.update_url(this.props.url, this.props.is_live_stream);
+        this.update_source(this.props.image_source);
 
         if (this.container_ref.current) {
             // Attach with passive: false to allow e.preventDefault()
@@ -45,8 +68,8 @@ export class FrameViewer extends React.Component<{ url: string; is_live_stream: 
 
     componentDidUpdate(prev_props, prev_state) {
         // Handle URL changes
-        if (prev_props.url !== this.props.url || prev_props.is_live_stream !== this.props.is_live_stream) {
-            this.update_url(this.props.url, this.props.is_live_stream);
+        if (JSON.stringify(prev_props.image_source || {}) != JSON.stringify(this.props.image_source || {})) {
+            this.update_source(this.props.image_source);
         }
 
         // Handle global drag event listeners
@@ -65,9 +88,11 @@ export class FrameViewer extends React.Component<{ url: string; is_live_stream: 
     }
 
     componentWillUnmount() {
-        if (this.retry_timeout) {
-            clearTimeout(this.retry_timeout);
+        if (this.source_inst) {
+            this.source_inst.abort();
+            this.source_inst = null;
         }
+
         if (this.container_ref.current) {
             this.container_ref.current.removeEventListener('wheel', this.handle_wheel);
         }
@@ -75,36 +100,44 @@ export class FrameViewer extends React.Component<{ url: string; is_live_stream: 
         window.removeEventListener('mouseup', this.handle_mouse_up);
     }
 
-    update_url = (url, is_live_stream) => {
-        if (this.retry_timeout) {
-            clearTimeout(this.retry_timeout);
-            this.retry_timeout = null;
+    update_source = (image_source) => {
+
+        if (this.source_inst) {
+            this.source_inst.abort();
+            this.source_inst = null;
         }
 
-        if (!url) {
-            this.setState({ img_src: '', is_loading: false });
+        image_source = image_source || {};
+
+        if (image_source.url) {
+            this.setState({ is_loading: true, img_src: image_source.url });
             return;
         }
 
-        this.setState({ is_loading: true });
-        const src_url = is_live_stream ? `${url}${url.includes('?') ? '&' : '?'}time=${Date.now()}` : url;
-        this.setState({ img_src: src_url });
+        if (image_source.camera_id) {
+            this.source_inst = new CameraLiveFrameSource(this.props.channel, image_source.camera_id, (image) => {
+                this.setState({ img_src: image });
+            });
+
+            // Blank image until we get the first frame.
+            this.setState({ img_src: '', is_loading: true });
+
+            return;
+        }
+
+        // No image source
+        this.setState({ img_src: '', is_loading: false });
     }
 
     handle_img_load = () => {
         this.setState({ is_loading: false });
     }
 
+    // NOTE: The error handler only works well to detect a single image failure.
+    // If the URL ends up being a chunked stream, it can't detect an unexpected end
+    // of stream after the first image is loaded. 
     handle_img_error = () => {
-        const { is_live_stream, url } = this.props;
-        if (is_live_stream && url) {
-            this.retry_timeout = setTimeout(() => {
-                const src_url = `${url}${url.includes('?') ? '&' : '?'}time=${Date.now()}`;
-                this.setState({ img_src: src_url });
-            }, 2000);
-        } else {
-            this.setState({ is_loading: false });
-        }
+        this.setState({ is_loading: false });
     }
 
     handle_wheel = (e) => {
@@ -237,7 +270,6 @@ export class FrameViewer extends React.Component<{ url: string; is_live_stream: 
                                         imageRendering: transform.scale > 2 ? "pixelated" : undefined,
                                     }}
                                     onLoad={this.handle_img_load}
-                                    // TODO: Error handling doesn't currently work.
                                     onAbort={this.handle_img_error}
                                     onError={this.handle_img_error}
                                 />
