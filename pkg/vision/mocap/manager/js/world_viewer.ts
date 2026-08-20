@@ -170,8 +170,7 @@ export class MocapWorldViewer {
         this._scene.add(directionalLight);
 
         // Grid on XY plane
-        this._gridHelper = new THREE.GridHelper(10, 10, 0xcccccc, 0xe0e0e0);
-        this._gridHelper.rotation.x = Math.PI / 2; // Rotate to XY
+        this._gridHelper = this._createCustomGrid(0xe0e0e0);
         this._scene.add(this._gridHelper);
 
         // Axes (Red=X/East, Green=Y/North, Blue=Z/Up)
@@ -348,18 +347,51 @@ export class MocapWorldViewer {
         this._camera_groups.forEach(group => group.visible = visible);
     }
 
+    _createCustomGrid(colorHex) {
+        const size = 10;
+        const divisions = 10;
+        const halfSize = size / 2;
+        const step = size / divisions;
+
+        const vertices = [];
+        for (let i = -halfSize; i <= halfSize; i += step) {
+            if (Math.abs(i) > 0.001) {
+                // Normal grid lines
+                // Line parallel to Y
+                vertices.push(i, -halfSize, 0, i, halfSize, 0);
+                // Line parallel to X
+                vertices.push(-halfSize, i, 0, halfSize, i, 0);
+            } else {
+                // Central axes: AxesHelper draws the positive halves (0 to 2),
+                // so we draw the negative halves (-halfSize to 0) and the
+                // remaining positive halves (2 to halfSize) to avoid z-fighting.
+
+                // Line along Y axis (X=0)
+                vertices.push(0, -halfSize, 0, 0, 0, 0); // Negative
+                vertices.push(0, 2, 0, 0, halfSize, 0);  // Positive remainder
+
+                // Line along X axis (Y=0)
+                vertices.push(-halfSize, 0, 0, 0, 0, 0); // Negative
+                vertices.push(2, 0, 0, halfSize, 0, 0);  // Positive remainder
+            }
+        }
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+        const material = new THREE.LineBasicMaterial({ color: colorHex, depthWrite: false });
+        const grid = new THREE.LineSegments(geometry, material);
+        return grid;
+    }
+
     setDarkMode(isDark) {
         if (isDark) {
             this._scene.background = new THREE.Color('#121212');
             this._scene.remove(this._gridHelper);
-            this._gridHelper = new THREE.GridHelper(10, 10, 0x444444, 0x222222);
-            this._gridHelper.rotation.x = Math.PI / 2;
+            this._gridHelper = this._createCustomGrid(0x222222);
             this._scene.add(this._gridHelper);
         } else {
             this._scene.background = new THREE.Color('#f8f9fa');
             this._scene.remove(this._gridHelper);
-            this._gridHelper = new THREE.GridHelper(10, 10, 0xcccccc, 0xe0e0e0);
-            this._gridHelper.rotation.x = Math.PI / 2;
+            this._gridHelper = this._createCustomGrid(0xe0e0e0);
             this._scene.add(this._gridHelper);
         }
     }

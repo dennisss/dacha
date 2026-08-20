@@ -12,13 +12,13 @@ use rpc_util::AddReflection;
 use rpc_util::ProfilezRequestHandler;
 use rpc_util::PROFILEZ_PATH;
 use protobuf::Message;
+use http_util::PathRouter;
 
 use crate::acl::checker::*;
 use crate::credentials::get_http_server_peer_identity;
 use crate::meta::client::ClusterMetaClient;
 use crate::server::acl::*;
 use crate::server::handler::*;
-use crate::server::router::PathRouter;
 use crate::server::status_handler::*;
 use crate::server::redirect_handler::*;
 use crate::service::address::ServiceName;

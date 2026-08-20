@@ -44,6 +44,7 @@ members = [
 	"pkg/http/util",
 	"pkg/http/cache",
 	"pkg/http/cache/proto",
+	"pkg/http/websocket",
 	"pkg/rpc",
 	"pkg/rpc_test",
 	"pkg/image",
@@ -225,10 +226,12 @@ members = [
 	"pkg/things/labeler/proto",
 	"pkg/things/inventory",
 	"pkg/things/inventory/proto",
+	"pkg/vision/ffi",
 	"pkg/vision/mocap/camera",
 	"pkg/vision/mocap/camera/core",
 	"pkg/vision/mocap/camera/supervisor",
 	"pkg/vision/mocap/manager",
+	"pkg/vision/mocap/app",
 	"pkg/vision/mocap/tools",
 	"pkg/vision/mocap/simulation",
 ]
@@ -236,6 +239,8 @@ members = [
 [workspace.dependencies]
 mio = { version = "1.2.2", default-features = false, features = ["os-poll", "net"] }
 windows-sys = { version = "0.61.2", features = ["Win32_System_Console"] }
+syn = { version = "1.0.23", features = ["extra-traits", "full"] }
+pin-project-lite = { version = "0.2.17" }
 
 [profile.dev]
 #opt-level = 3

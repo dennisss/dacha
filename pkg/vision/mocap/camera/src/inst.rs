@@ -36,7 +36,8 @@ use crate::capture::*;
 // TODO: Dedup this constant.
 const STROBE_DIMMING_FREQUENCY: f32 = 10000.0;
 
-const NUM_RGB_LEDS: usize = 12;
+// Currently the MCU models the entire strip as one color.
+const NUM_RGB_LEDS: usize = 1;
 
 
 pub struct MocapCamera {

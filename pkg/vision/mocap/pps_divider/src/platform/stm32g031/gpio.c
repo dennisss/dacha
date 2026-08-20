@@ -65,13 +65,12 @@ void GPIO_Init(void)
     // PA6 Mode -> 11 (Analog)
     GPIOA->MODER |= (GPIO_MODER_MODE6_0 | GPIO_MODER_MODE6_1);
 
-    // 5. Configure WS2812 SPI (PA7)
+    // 5. Configure WS2812 TIM3_CH2 PWM (PA7)
     // PA7 Mode -> 10 (AF)
     GPIOA->MODER &= ~(GPIO_MODER_MODE7);
     GPIOA->MODER |=  (GPIO_MODER_MODE7_1);
-    // Enable Pull-Up so resting state is High (inverted Low for WS2812)
-    GPIOA->PUPDR &= ~(GPIO_PUPDR_PUPD7);
-    GPIOA->PUPDR |=  (GPIO_PUPDR_PUPD7_0);
-    // PA7 AFR[0] -> AF0 (SPI1_MOSI) - already 0 after reset, but let's clear it
+    
+    // PA7 AFR[0] -> AF1 (TIM3_CH2)
     GPIOA->AFR[0] &= ~(0xF << (7 * 4));
+    GPIOA->AFR[0] |=  (0x1 << (7 * 4));
 }

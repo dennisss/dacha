@@ -37,6 +37,12 @@ service Manager {
     // the raw blobs data returned by 'ReadBlobs'.
     rpc ReadTrackedPoints (ReadTrackedPointsRequest) returns (stream ReadTrackedPointsResponse);
 
+    // Reads the raw frames from a single camera.
+    //
+    // This has the same function as the mocap.Camera service's ReadFrames method
+    // but will automatically deal with camera discovery and proxying to the camera. 
+    rpc ReadFrames (ReadFramesRequest) returns (stream ReadFramesResponse);
+
     // Runs some command that mutates the state of the system.
     //
     // e.g. change camera controls, start wanding, define rigid bodies, etc.

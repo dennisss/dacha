@@ -59,6 +59,13 @@ impl WebViewHandle {
     }
 }
 
+#[derive(Clone)]
+pub struct Icon {
+    pub rgba: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+}
+
 pub struct WebViewBuilder {
     pub title: String,
     pub width: u32,
@@ -73,6 +80,7 @@ pub struct WebViewBuilder {
     pub prefer_dark_theme: bool,
     pub maximized: bool,
     pub user_data_dir: Option<String>,
+    pub icon: Option<Icon>,
 }
 
 impl WebViewBuilder {
@@ -93,6 +101,7 @@ impl WebViewBuilder {
             prefer_dark_theme: false,
             maximized: false,
             user_data_dir: None,
+            icon: None,
         }
     }
 
@@ -155,6 +164,13 @@ impl WebViewBuilder {
     /// Sets the native window title bar to prefer dark theme (where supported)
     pub fn with_prefer_dark_theme(mut self, prefer: bool) -> Self {
         self.prefer_dark_theme = prefer;
+        self
+    }
+
+    /// Set the window icon (shows in the taskbar/dock and titlebar).
+    /// The `rgba` vector should contain raw RGBA pixel data (4 bytes per pixel).
+    pub fn icon(mut self, icon: Icon) -> Self {
+        self.icon = Some(icon);
         self
     }
 

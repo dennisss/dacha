@@ -4,10 +4,10 @@ use core::time::Duration;
 use base_error::Result;
 
 #[cfg(feature = "std")]
-type MutexImpl<T> = common::async_std::sync::Mutex<T>;
+type MutexImpl<T> = async_lock::Mutex<T>;
 
 #[cfg(feature = "std")]
-type MutexGuardImpl<'a, T> = common::async_std::sync::MutexGuard<'a, T>;
+type MutexGuardImpl<'a, T> = async_lock::MutexGuard<'a, T>;
 
 #[cfg(target_label = "cortex_m")]
 type MutexImpl<T> = crate::cortex_m::mutex::Mutex<T>;

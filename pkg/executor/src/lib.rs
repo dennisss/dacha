@@ -46,6 +46,8 @@ pub mod stack_pinned;
 pub mod sync;
 pub mod thread;
 pub mod waker;
+#[cfg(feature = "std")]
+pub mod pipe;
 
 #[cfg(target_label = "cortex_m")]
 mod cortex_m;

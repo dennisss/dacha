@@ -339,7 +339,7 @@ export class CheckerboardPage extends React.Component<CheckerboardPageProps, Che
     render() {
         let status = this.state.status;
         if (!status) {
-            return <div>Loading...</div>;
+            return <div></div>;
         };
 
         if (!status.mode || !status.mode.checkerboard_calibration) {

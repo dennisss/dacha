@@ -19,6 +19,6 @@ void ADC_GetStats(uint8_t *temp_half_c, uint16_t *v_min, uint16_t *v_max, uint16
 
 // WS2812
 void WS2812_Init(void);
-void WS2812_Update(uint32_t rgb_color);
+void WS2812_Update(uint32_t ms_ticks, uint32_t rgb_color);
 
 #endif

@@ -10,6 +10,9 @@ common = { path = "../common", default-features = false }
 peripherals_raw = { path = "../peripherals/raw", default-features = false }
 macros = { path = "../macros" }
 failure = { version = "0.1.8", optional = true }
+async-lock = { version = "3.4.2", optional = true }
+async-channel = { version = "2.3.0", optional = true }
+pin-project-lite = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 sys = { path = "../sys" }
@@ -23,4 +26,4 @@ windows-sys = { workspace = true }
 [features]
 default = ["std", "alloc"]
 alloc = ["common/alloc", "base_error/alloc", "base_algorithms/alloc", "peripherals_raw/alloc"]
-std = ["common/std", "base_error/std", "base_algorithms/std", "failure", "peripherals_raw/std"]
+std = ["common/std", "base_error/std", "base_algorithms/std", "failure", "peripherals_raw/std", "async-lock", "async-channel"]

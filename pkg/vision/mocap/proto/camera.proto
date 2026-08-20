@@ -26,6 +26,10 @@ enum ComputeModuleModel {
     PI_CM5_LITE = 4;
 }
 
+// WARNING: Always prefer to use the mocap.Manager methods instead of these.
+// The manager long term job will be to handle flow control over the internal
+// mocap network and any requests issued outside of it may risk the stability
+// of the system. 
 service Camera {
     rpc Status (StatusRequest) returns (MocapCameraStatus);
 
@@ -217,7 +221,14 @@ message CameraBlobResults {
 }
 
 message ReadFramesRequest {
+    // This is mainly relevant when requesting on the mocap.Manager service and
+    // picks which camera's frames to read. 
+    fixed64 camera_id = 1;
 
+    // INTERNAL ONLY. DO NOT USE.
+    // This is used by the main UI to efficiently transfer the frame bytes through a different
+    // connection instead of through the responses to this RPC.
+    uint32 side_channel_id = 2;
 }
 
 message ReadFramesResponse {

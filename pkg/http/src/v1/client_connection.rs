@@ -450,8 +450,8 @@ mod tests {
     async fn http1_client_connection_works() -> Result<()> {
         let conn = Arc::new(ClientConnection::new());
 
-        let (client_sender, server_reciever) = common::pipe::pipe();
-        let (mut server_sender, client_receiver) = common::pipe::pipe();
+        let (client_sender, server_reciever) = executor::pipe::pipe();
+        let (mut server_sender, client_receiver) = executor::pipe::pipe();
 
         server_sender
             .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\nGOOD")

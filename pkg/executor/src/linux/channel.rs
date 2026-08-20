@@ -1,4 +1,4 @@
-use common::async_std::channel;
+use crate::channel;
 
 pub struct Channel<T> {
     sender: channel::Sender<T>,

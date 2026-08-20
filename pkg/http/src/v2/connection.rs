@@ -832,7 +832,7 @@ TODO:
 mod tests {
     use super::*;
 
-    use common::pipe::pipe;
+    use executor::pipe::pipe;
     use net::ip::IPAddress;
 
     use crate::body::{BodyFromData, EmptyBody};

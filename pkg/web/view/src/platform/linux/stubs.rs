@@ -24,6 +24,7 @@ pub struct GtkWebkitVtable {
     pub gtk_init: extern "C" fn(*mut c_int, *mut *mut *mut c_char),
     pub gtk_window_new: extern "C" fn(c_int) -> *mut c_void,
     pub gtk_window_set_title: extern "C" fn(*mut c_void, *const c_char),
+    pub gtk_window_set_icon: extern "C" fn(*mut c_void, *mut c_void),
     pub gtk_window_set_default_size: extern "C" fn(*mut c_void, c_int, c_int),
     pub gtk_window_resize: extern "C" fn(*mut c_void, c_int, c_int),
     pub gtk_window_maximize: extern "C" fn(*mut c_void),
@@ -37,6 +38,8 @@ pub struct GtkWebkitVtable {
     pub g_idle_add: extern "C" fn(extern "C" fn(*mut c_void) -> c_int, *mut c_void) -> c_uint,
     pub g_free: extern "C" fn(*mut c_void),
     pub g_object_ref: extern "C" fn(*mut c_void) -> *mut c_void,
+    pub g_object_unref: extern "C" fn(*mut c_void),
+    pub gdk_pixbuf_new_from_data: extern "C" fn(*const u8, c_int, c_int, c_int, c_int, c_int, c_int, *mut c_void, *mut c_void) -> *mut c_void,
     pub g_memory_input_stream_new: extern "C" fn() -> *mut c_void,
     pub g_memory_input_stream_add_data: extern "C" fn(*mut c_void, *mut c_void, isize, Option<extern "C" fn(*mut c_void)>),
     pub webkit_website_data_manager_new: unsafe extern "C" fn(*const c_char, ...) -> *mut c_void,
@@ -125,6 +128,7 @@ impl GtkWebkitVtable {
             gtk_init: load_sym!(b"gtk_init\0"),
             gtk_window_new: load_sym!(b"gtk_window_new\0"),
             gtk_window_set_title: load_sym!(b"gtk_window_set_title\0"),
+            gtk_window_set_icon: load_sym!(b"gtk_window_set_icon\0"),
             gtk_window_set_default_size: load_sym!(b"gtk_window_set_default_size\0"),
             gtk_window_resize: load_sym!(b"gtk_window_resize\0"),
             gtk_window_maximize: load_sym!(b"gtk_window_maximize\0"),
@@ -138,6 +142,21 @@ impl GtkWebkitVtable {
             g_idle_add: load_sym!(b"g_idle_add\0"),
             g_free: load_sym!(b"g_free\0"),
             g_object_ref: load_sym!(b"g_object_ref\0"),
+            g_object_unref: load_sym!(b"g_object_unref\0"),
+            gdk_pixbuf_new_from_data: {
+                let gdk_handle = dlopen(b"libgdk_pixbuf-2.0.so.0\0".as_ptr() as *const c_char, RTLD_NOW | RTLD_GLOBAL);
+                if gdk_handle.is_null() {
+                    let gdk_handle2 = dlopen(b"libgdk_pixbuf-2.0.so\0".as_ptr() as *const c_char, RTLD_NOW | RTLD_GLOBAL);
+                    if gdk_handle2.is_null() {
+                        return Err(format_err!("Could not load libgdk_pixbuf-2.0"));
+                    }
+                    let sym = dlsym(gdk_handle2, b"gdk_pixbuf_new_from_data\0".as_ptr() as *const c_char);
+                    std::mem::transmute(sym)
+                } else {
+                    let sym = dlsym(gdk_handle, b"gdk_pixbuf_new_from_data\0".as_ptr() as *const c_char);
+                    std::mem::transmute(sym)
+                }
+            },
             g_memory_input_stream_new: load_sym!(b"g_memory_input_stream_new\0"),
             g_memory_input_stream_add_data: load_sym!(b"g_memory_input_stream_add_data\0"),
             webkit_website_data_manager_new: load_sym!(b"webkit_website_data_manager_new\0"),
@@ -198,7 +217,10 @@ pub unsafe fn gtk_init(argc: *mut c_int, argv: *mut *mut *mut c_char) { (get_vta
 #[inline(always)]
 pub unsafe fn gtk_window_new(window_type: c_int) -> *mut c_void { (get_vtable().gtk_window_new)(window_type) }
 #[inline(always)]
+#[inline(always)]
 pub unsafe fn gtk_window_set_title(window: *mut c_void, title: *const c_char) { (get_vtable().gtk_window_set_title)(window, title) }
+#[inline(always)]
+pub unsafe fn gtk_window_set_icon(window: *mut c_void, icon: *mut c_void) { (get_vtable().gtk_window_set_icon)(window, icon) }
 #[inline(always)]
 pub unsafe fn gtk_window_set_default_size(window: *mut c_void, width: c_int, height: c_int) { (get_vtable().gtk_window_set_default_size)(window, width, height) }
 #[inline(always)]
@@ -223,7 +245,12 @@ pub unsafe fn g_idle_add(function: extern "C" fn(*mut c_void) -> c_int, data: *m
 #[inline(always)]
 pub unsafe fn g_free(ptr: *mut c_void) { (get_vtable().g_free)(ptr) }
 #[inline(always)]
+#[inline(always)]
 pub unsafe fn g_object_ref(object: *mut c_void) -> *mut c_void { (get_vtable().g_object_ref)(object) }
+#[inline(always)]
+pub unsafe fn g_object_unref(object: *mut c_void) { (get_vtable().g_object_unref)(object) }
+#[inline(always)]
+pub unsafe fn gdk_pixbuf_new_from_data(data: *const u8, colorspace: c_int, has_alpha: c_int, bits_per_sample: c_int, width: c_int, height: c_int, rowstride: c_int, destroy_fn: *mut c_void, destroy_fn_data: *mut c_void) -> *mut c_void { (get_vtable().gdk_pixbuf_new_from_data)(data, colorspace, has_alpha, bits_per_sample, width, height, rowstride, destroy_fn, destroy_fn_data) }
 #[inline(always)]
 pub unsafe fn g_memory_input_stream_new() -> *mut c_void { (get_vtable().g_memory_input_stream_new)() }
 #[inline(always)]

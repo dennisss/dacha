@@ -17,6 +17,7 @@ rpc = { path = "../../../rpc" }
 net = { path = "../../../net" }
 http = { path = "../../../http" }
 http_util = { path = "../../../http/util" }
+websocket = { path = "../../../http/websocket" }
 web = { path = "../../../web" }
 webview = { path = "../../../web/view" }
 json = { path = "../../../format/json" }
@@ -29,3 +30,6 @@ crypto = { path = "../../../crypto" }
 [build-dependencies]
 common = { path = "../../../common" }
 file = { path = "../../../file" }
+
+[target.'cfg(target_os = "windows")'.build-dependencies]
+embed-resource = "3.0.11"

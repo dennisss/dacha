@@ -265,7 +265,7 @@ impl raft::StateMachine<()> for EmbeddedDBStateMachine {
         let last_applied = backup.last_sequence().into();
         let approximate_size = backup.approximate_size().await?;
 
-        let (mut writer, reader) = common::pipe::pipe();
+        let (mut writer, reader) = executor::pipe::pipe();
 
         // TODO: If the reader is dropped, then we can cancel this.
         executor::spawn(async move {

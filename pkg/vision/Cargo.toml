@@ -10,5 +10,7 @@ executor = { path = "../executor" }
 macros = { path = "../macros" }
 image = { path = "../image" }
 math = { path = "../math" }
+crypto = { path = "../crypto" }
 typenum = "1.10.0"
 vision_proto = { path = "./proto" }
+vision_ffi = { path = "./ffi" }

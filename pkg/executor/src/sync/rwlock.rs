@@ -2,17 +2,17 @@ use core::ops::{Deref, DerefMut};
 use core::time::Duration;
 
 use base_error::Result;
-use common::async_std::sync::{
+use async_lock::{
     RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard,
 };
 
 use crate::sync::PoisonError;
 
-type RwLockImpl<T> = common::async_std::sync::RwLock<T>;
-type RwLockReadGuardImpl<'a, T> = common::async_std::sync::RwLockReadGuard<'a, T>;
+type RwLockImpl<T> = async_lock::RwLock<T>;
+type RwLockReadGuardImpl<'a, T> = async_lock::RwLockReadGuard<'a, T>;
 type RwLockUpgradableReadGuardImpl<'a, T> =
-    common::async_std::sync::RwLockUpgradableReadGuard<'a, T>;
-type RwLockWriteGuardImpl<'a, T> = common::async_std::sync::RwLockWriteGuard<'a, T>;
+    async_lock::RwLockUpgradableReadGuard<'a, T>;
+type RwLockWriteGuardImpl<'a, T> = async_lock::RwLockWriteGuard<'a, T>;
 
 pub struct AsyncRwLock<T> {
     inner: RwLockImpl<AsyncRwLockValue<T>>,

@@ -13,7 +13,7 @@ use objc2_app_kit::{
     NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSWindow,
     NSWindowStyleMask, NSOpenPanel, NSSavePanel,
     NSAppearance, NSAppearanceNameDarkAqua, NSAppearanceCustomization,
-    NSAlert, NSAlertStyle,
+    NSAlert, NSAlertStyle, NSImage, NSBitmapImageRep
 };
 use objc2_foundation::{
     NSPoint, NSRect, NSSize, NSString, NSURL, MainThreadMarker,
@@ -267,6 +267,43 @@ pub fn run(mut builder: WebViewBuilder) -> Result<()> {
             NSPoint::new(0.0, 0.0),
             NSSize::new(builder.width as f64, builder.height as f64),
         );
+        
+        if let Some(ref icon) = builder.icon {
+            let color_space = NSString::from_str("NSDeviceRGBColorSpace");
+            let rep_alloc: objc2::rc::Allocated<NSBitmapImageRep> = msg_send_id![NSBitmapImageRep::class(), alloc];
+            let rep: Option<Retained<NSBitmapImageRep>> = unsafe {
+                msg_send_id![
+                    rep_alloc,
+                    initWithBitmapDataPlanes: std::ptr::null_mut::<*mut u8>(),
+                    pixelsWide: icon.width as isize,
+                    pixelsHigh: icon.height as isize,
+                    bitsPerSample: 8 as isize,
+                    samplesPerPixel: 4 as isize,
+                    hasAlpha: true,
+                    isPlanar: false,
+                    colorSpaceName: &*color_space,
+                    bitmapFormat: 0 as isize,
+                    bytesPerRow: (icon.width * 4) as isize,
+                    bitsPerPixel: 32 as isize,
+                ]
+            };
+            if let Some(rep) = rep {
+                unsafe {
+                    let ptr: *mut u8 = msg_send![&rep, bitmapData];
+                    if !ptr.is_null() {
+                        std::ptr::copy_nonoverlapping(icon.rgba.as_ptr(), ptr, icon.rgba.len());
+                    }
+                }
+                let image_alloc: objc2::rc::Allocated<NSImage> = msg_send_id![NSImage::class(), alloc];
+                let size = NSSize::new(icon.width as f64, icon.height as f64);
+                let image: Retained<NSImage> = unsafe { msg_send_id![image_alloc, initWithSize: size] };
+                unsafe {
+                    let _: () = msg_send![&image, addRepresentation: &*rep];
+                }
+                NSApplication::sharedApplication(mtm).setApplicationIconImage(Some(&image));
+            }
+        }
+
         let style_mask = NSWindowStyleMask::Titled
             | NSWindowStyleMask::Closable
             | NSWindowStyleMask::Resizable

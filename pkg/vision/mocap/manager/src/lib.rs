@@ -20,6 +20,7 @@ mod wanding;
 mod rigid_body;
 mod rigid_transform;
 mod origin;
+pub mod side_channel;
 pub mod skeleton;
 mod recording;
 

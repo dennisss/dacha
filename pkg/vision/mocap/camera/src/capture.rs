@@ -90,7 +90,7 @@ struct State {
     /// processing responses.
     ///
     /// Entries are added when we push work to the blob processing threads and removed by the blob processing
-    /// threas once they are done working on that item.
+    /// them once they are done working on that item.
     blob_processing_queue: VecDeque<u32>,
 
     /// Similar to blob_processing_queue but for tracking completion of MJPEG encoding.

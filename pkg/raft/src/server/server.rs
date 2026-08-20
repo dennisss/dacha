@@ -815,7 +815,7 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
 
         res.value = r?;
 
-        let (mut pipe_writer, pipe_reader) = common::pipe::pipe();
+        let (mut pipe_writer, pipe_reader) = executor::pipe::pipe();
 
         let (callback_sender, callback_receiver) = oneshot::channel();
         let snapshot = IncomingStateMachineSnapshot {

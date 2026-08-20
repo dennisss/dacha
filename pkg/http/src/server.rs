@@ -746,11 +746,29 @@ impl Server {
                 }
             }
 
+            let upgrade_protocols =
+                crate::headers::upgrade_syntax::parse_upgrade(&request_head.headers)?;
+
+
+            // TODO: Check "Connection" header is "Upgrade" and that the request body is empty
+            let mut has_websocket_upgrade = false;
+            for protocol in &upgrade_protocols {
+                if protocol.name.as_ref() == "websocket" {
+                    has_websocket_upgrade = true;
+                    break;
+                }
+            }
+
+            if has_websocket_upgrade {
+                return shared.handler.handle_upgrade(request_head, Box::new(read_stream), write_stream).await;
+            }
+
             // TODO: Convert the error into a response.
             let mut persist_connection = crate::headers::connection::can_connection_persist(
                 &request_head.version,
                 &request_head.headers,
-            )?;
+            )?; 
+
 
             let ((body, body_reclaimer), body_close_delimited) =
                 match decode_request_body_v1(&request_head, read_stream).await {
@@ -773,9 +791,6 @@ impl Server {
                 body,
             };
 
-            let upgrade_protocols =
-                crate::headers::upgrade_syntax::parse_upgrade(&req.head.headers)?;
-
             let mut has_h2c_upgrade = false;
             for protocol in &upgrade_protocols {
                 if protocol.name.as_ref() == "h2c" && protocol.version.is_none() {
@@ -784,6 +799,7 @@ impl Server {
                 }
             }
 
+            // TODO: Check for the "Connection: Upgrade" header.
             if has_h2c_upgrade {
                 if body_close_delimited {
                     return Err(err_msg(

@@ -30,8 +30,6 @@ pub extern crate failure;
 #[macro_use]
 extern crate arrayref;
 #[cfg(feature = "std")]
-pub extern crate async_std;
-#[cfg(feature = "std")]
 pub extern crate base64;
 #[cfg(feature = "std")]
 pub extern crate bytes;
@@ -87,8 +85,6 @@ pub mod list;
 #[cfg(feature = "std")]
 pub mod loops;
 pub mod option;
-#[cfg(feature = "std")]
-pub mod pipe;
 pub mod register;
 pub mod segmented_buffer;
 #[cfg(feature = "alloc")]

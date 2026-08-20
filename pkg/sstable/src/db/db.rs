@@ -6,7 +6,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use common::algorithms::lower_bound_by;
-use common::async_std::channel::RecvError;
 use common::bytes::Bytes;
 use common::errors::*;
 use common::io::Writeable;
@@ -14,6 +13,7 @@ use crypto::random::SharedRng;
 use db_kv::KeyValueEntry;
 use executor::cancellation::CancellationToken;
 use executor::channel;
+use executor::channel::RecvError;
 use executor::child_task::ChildTask;
 use executor::lock;
 use executor::sync::{AsyncMutex, AsyncRwLock};
@@ -587,7 +587,7 @@ impl EmbeddedDB {
 
         let mut made_progress = true;
 
-        while !cancellation_token.is_cancelled().await {
+        while !cancellation_token.is_cancelled() {
             // If we made any progress in the previous iteration, immediately try to do more
             // work.
             //

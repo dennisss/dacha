@@ -4,6 +4,8 @@ use core::future::Future;
 use core::pin::Pin;
 use core::task::Poll;
 
+use pin_project_lite::pin_project;
+
 pub struct Race<F1, F2> {
     f1: Pin<Box<F1>>,
     f2: Pin<Box<F2>>,
@@ -38,23 +40,25 @@ impl<T, F1: Future<Output = T>, F2: Future<Output = T>> Future for Race<F1, F2> 
     }
 }
 
-pub struct Map<F, M> {
-    future: F,
-    mapper: M,
+pin_project! {
+    pub struct Map<F, M> {
+        #[pin]
+        future: F,
+        mapper: M,
+    }
 }
 
 pub fn map<F, M>(future: F, mapper: M) -> Map<F, M> {
     Map { future, mapper }
 }
 
-impl<T, Y, F: Future<Output = T> + Unpin, M: Fn(T) -> Y + Unpin> Future for Map<F, M> {
+impl<T, Y, F: Future<Output = T>, M: Fn(T) -> Y> Future for Map<F, M> {
     type Output = Y;
 
     fn poll(self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
-        let inst = self.get_mut();
+        let inst = self.project();
 
-        let p = Pin::new(&mut inst.future);
-        match p.poll(cx) {
+        match inst.future.poll(cx) {
             Poll::Ready(v) => Poll::Ready((inst.mapper)(v)),
             Poll::Pending => Poll::Pending,
         }

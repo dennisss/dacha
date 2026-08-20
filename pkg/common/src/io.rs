@@ -398,7 +398,7 @@ impl<T: 'static + Send, S: crate::futures::sink::Sink<T> + Send + Unpin> Sinkabl
 /// An asynchronously readable object. Works similarly to std::io::Read except
 /// is easier to implement for async.
 #[async_trait]
-pub trait Readable: Send + Unpin {
+pub trait Readable: Send {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize>;
 
     async fn read_at_most(&mut self, buf: &mut Vec<u8>, max_additional_bytes: usize) -> Result<()> {

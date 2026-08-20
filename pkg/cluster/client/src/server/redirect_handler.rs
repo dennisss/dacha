@@ -14,7 +14,6 @@ use http::status_code::{MOVED_PERMANENTLY, FOUND};
 use crate::credentials::get_http_server_peer_identity;
 use crate::meta::client::ClusterMetaClient;
 use crate::server::acl::*;
-use crate::server::router::PathRouter;
 use crate::service::address::ServiceName;
 
 pub(super) struct RedirectHandler {

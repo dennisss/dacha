@@ -9,9 +9,9 @@ use db_table::db::ProtobufDB;
 use executor_multitask::ServiceResource;
 use http::ServerHandler;
 use rpc_util::AddReflection;
+use http_util::PathRouter;
 
 use crate::acl::checker::*;
-use crate::server::router::PathRouter;
 use crate::service::address::ServiceName;
 use crate::{acl::principal::*, meta::client::ClusterMetaClient};
 use crate::acl::proxy::FORWARDED_ENTITY_HEADER;

@@ -32,6 +32,7 @@ ptp_proto = { path = "../../../net/ptp/proto" }
 http = { path = "../../../http" }
 http_util = { path = "../../../http/util" }
 web = { path = "../../../web" }
+net = { path = "../../../net" }
 rpc_util = { path = "../../../rpc/util" }
 protobuf_builtins = { path = "../../../../third_party/protobuf_builtins" }
 v4l2 = { path = "../../../media/v4l2" }

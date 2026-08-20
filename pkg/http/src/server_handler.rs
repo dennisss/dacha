@@ -3,9 +3,11 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use common::errors::*;
+use common::io::*;
 use net::ip::{IPAddress, SocketAddr};
 
-use crate::request::Request;
+use crate::request::{Request, RequestHead};
 use crate::response::Response;
 
 pub type ServerConnectionId = u64;
@@ -47,6 +49,16 @@ pub trait ServerHandler: 'static + Send + Sync {
         request: Request,
         context: ServerRequestContext<'a>,
     ) -> Response;
+
+    async fn handle_upgrade(
+        &self,
+        request_head: RequestHead,
+        reader: Box<dyn Readable>,
+        writer: Box<dyn SharedWriteable>
+    ) -> Result<()> {
+        // Default drop it.
+        Ok(())
+    }
 }
 
 #[async_trait]

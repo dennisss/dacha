@@ -815,7 +815,7 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
     render() {
         let status = this.state.status;
         if (!status) {
-            return <div>Loading...</div>;
+            return <div></div>;
         };
 
         // TODO: Do this at a higher level across all pages.

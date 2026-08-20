@@ -58,7 +58,7 @@ impl RecordScreenCommand {
         let cancellation_token = executor::signals::new_shutdown_token();
 
         let mut i = 0;
-        while !cancellation_token.is_cancelled().await {
+        while !cancellation_token.is_cancelled() {
             // if i % 10 == 0 {
             //     println!("Frame idx: {}", i);
             // }

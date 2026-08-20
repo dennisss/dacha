@@ -12,12 +12,13 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use std::sync::Arc;
 
-// TODO: Need to switch to using the ones in the executor crate
-use async_std::channel;
-use async_std::sync::Mutex;
+use common::errors::*;
+use common::io::{IoError, IoErrorKind, Readable, Writeable};
 
-use crate::errors::*;
-use crate::io::{IoError, IoErrorKind, Readable, Writeable};
+// TODO: Need to switch to using the ones in the executor crate
+use crate::channel;
+use async_lock::Mutex;
+
 
 pub struct PipeWriter {
     buffer: Arc<Mutex<Vec<u8>>>,

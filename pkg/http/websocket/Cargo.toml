@@ -1,0 +1,15 @@
+[package]
+name = "websocket"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+base_util = { path = "../../base/util" }
+base_radix = { path = "../../base/radix" }
+common = { path = "../../common" }
+executor = { path = "../../executor" }
+executor_multitask = { path = "../../executor/multitask" }
+file = { path = "../../file" }
+http = { path = "../" }
+macros = { path = "../../macros" }
+crypto = { path = "../../crypto" }

@@ -48,8 +48,6 @@ int main(void)
 
     uint32_t last_heartbeat = 0;
     uint32_t last_adc_sample = 0;
-    uint32_t last_led_update = 0;
-    uint32_t last_rgb_color = 0xFFFFFFFF; // Force initial update
 
     while(1)
     {
@@ -64,14 +62,9 @@ int main(void)
             Protocol_SendTelemetry(telem_width, telem_error, telem_output_errors, telem_config_sequence, freq);
         }
         
-        // 3. WS2812 Update (on color change or every 1 sec)
+        // 3. WS2812 Update
         uint32_t current_color = pll_config.rgb_color;
-        if (current_color != last_rgb_color || (ms_ticks - last_led_update >= 1000))
-        {
-            last_rgb_color = current_color;
-            last_led_update = ms_ticks;
-            WS2812_Update(current_color);
-        }
+        WS2812_Update(ms_ticks, current_color);
         
         // 4. Sampling (1kHz)
         if (ms_ticks - last_adc_sample >= 1)

@@ -62,9 +62,9 @@ struct State {
 impl FakeMachine {
     pub async fn create() -> Result<(Box<dyn Readable>, Box<dyn Writeable>)> {
         // Send commands end.
-        let (client_writer, server_reader) = common::pipe::pipe();
+        let (client_writer, server_reader) = executor::pipe::pipe();
         // Return responses end
-        let (server_writer, client_reader) = common::pipe::pipe();
+        let (server_writer, client_reader) = executor::pipe::pipe();
 
         let shared = Arc::new(Shared {
             state: AsyncMutex::new(State {

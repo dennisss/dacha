@@ -519,6 +519,28 @@ pub fn run(mut builder: WebViewBuilder) -> Result<()> {
         let class_name = to_wstring("MinimalWebViewClass");
         let title_w = to_wstring(&builder.title);
 
+        let mut hicon = HICON::default();
+        if let Some(ref icon) = builder.icon {
+            let mut bgra = icon.rgba.clone();
+            for pixel in bgra.chunks_exact_mut(4) {
+                pixel.swap(0, 2); // RGBA -> BGRA
+            }
+            let and_mask_stride = ((icon.width + 15) / 16) * 2;
+            let and_mask_len = and_mask_stride * icon.height;
+            let and_mask = vec![0u8; and_mask_len as usize];
+            if let Ok(icon_handle) = CreateIcon(
+                None,
+                icon.width as i32,
+                icon.height as i32,
+                1,
+                32,
+                and_mask.as_ptr(),
+                bgra.as_ptr(),
+            ) {
+                hicon = icon_handle;
+            }
+        }
+
         let wc = WNDCLASSEXW {
             cbSize: mem::size_of::<WNDCLASSEXW>() as u32,
             style: CS_HREDRAW | CS_VREDRAW,
@@ -526,12 +548,12 @@ pub fn run(mut builder: WebViewBuilder) -> Result<()> {
             cbClsExtra: 0,
             cbWndExtra: 0,
             hInstance: instance.into(),
-            hIcon: HICON::default(),
+            hIcon: hicon,
             hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
             hbrBackground: HBRUSH((COLOR_WINDOW.0 + 1) as *mut _),
             lpszMenuName: PCWSTR::null(),
             lpszClassName: PCWSTR::from_raw(class_name.as_ptr()),
-            hIconSm: HICON::default(),
+            hIconSm: hicon,
         };
 
         if RegisterClassExW(&wc) == 0 {

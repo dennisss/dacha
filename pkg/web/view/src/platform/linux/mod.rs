@@ -352,6 +352,29 @@ pub fn run(mut builder: WebViewBuilder) -> Result<()> {
         }
 
         inner.window.store(window, Ordering::SeqCst);
+        
+        if let Some(ref icon) = builder.icon {
+            let rowstride = (icon.width * 4) as c_int;
+            let data_len = icon.rgba.len();
+            let data_ptr = malloc(data_len);
+            memcpy(data_ptr, icon.rgba.as_ptr() as *const c_void, data_len);
+            let pixbuf = gdk_pixbuf_new_from_data(
+                data_ptr as *const u8,
+                0, // GDK_COLORSPACE_RGB
+                1, // has_alpha = true
+                8, // bits_per_sample
+                icon.width as c_int,
+                icon.height as c_int,
+                rowstride,
+                ptr::null_mut(),
+                ptr::null_mut(),
+            );
+            if !pixbuf.is_null() {
+                gtk_window_set_icon(window, pixbuf);
+                g_object_unref(pixbuf);
+            }
+        }
+        
         gtk_window_set_title(window, title_cstr.as_ptr());
         gtk_window_set_default_size(window, builder.width as c_int, builder.height as c_int);
 
