@@ -93,4 +93,8 @@ EOF
 chmod 755 build/out/DEBIAN/preinst
 chmod 755 build/out/DEBIAN/postinst
 
-dpkg-deb --root-owner-group --build build/out build/ar0234-driver-rpi-arm64.deb
+mkdir -p "$WORKSPACE_DIR/dist/pkg/rpi"
+
+SOURCE_DATE_EPOCH=962409600 dpkg-deb -Z zstd -z 3 --root-owner-group --build build/out \
+    $WORKSPACE_DIR/dist/pkg/rpi/ar0234-driver-rpi-arm64.deb
+

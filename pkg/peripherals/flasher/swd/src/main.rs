@@ -83,6 +83,14 @@ async fn main() -> Result<()> {
     println!("Resetting...");
 
     swd.reset_core()?;
+
+    // Toggle NRST to cleanly boot the new firmware.
+    if let Some(pin) = &mut reset_pin {
+        pin.write(false)?;
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        pin.write(true)?;
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
     
     println!("Releasing pins...");
     swd.release_pins()?;

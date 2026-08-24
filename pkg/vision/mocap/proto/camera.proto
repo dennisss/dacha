@@ -5,6 +5,7 @@ package mocap;
 import "pkg/vision/mocap/proto/processor.proto";
 import "pkg/media/camera/proto/property.proto";
 import "pkg/math/proto/matrix.proto";
+import "pkg/vision/proto/params.proto";
 
 // Configuration about the specific hardware present in a given camera unit.
 // (think PCB revision, which camera driver to use, etc.)
@@ -16,6 +17,11 @@ message CameraHardwareConfig {
     uint32 compute_board_revision = 1;
 
     ComputeModuleModel compute_module = 2;
+
+    fixed64 camera_id = 3;
+
+    // 'Factory' calibrated intrinsics that are stored on the camera.
+    vision.CameraIntrinsicsModelProto factory_intrinsics = 4;
 }
 
 enum ComputeModuleModel {
@@ -127,6 +133,8 @@ message MocapCameraStatus {
     AccelerometerStatus accelerometer = 7;
 
     media.camera.Property camera_controls = 8;
+
+    CameraHardwareConfig hardware_config = 9;
 }
 
 message PPSDividerHeartbeat {
@@ -179,13 +187,7 @@ message MocapCameraSensor {
 }
 
 message AccelerometerStatus {
-    VectorProtoOld value = 1;
-}
-
-message VectorProtoOld {
-    float x = 1;
-    float y = 2;
-    float z = 3;
+    math.VectorProto value = 1;
 }
 
 message ReadBlobsRequest {

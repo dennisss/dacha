@@ -2,7 +2,11 @@
 
 This page is a general dump of recommendations and options when it comes to sourcing a camera sensor for optical motion capture.
 
-TLDR: We recommend building the custom AR0234 board (this is cheaper than pre-built ones than feeds in the external trigger signal). Best pre-built alternative is based on the OV9281 (`Innomaker CAM-MIPIOV9281 V2`)
+## TLDR
+
+We recommend building the custom AR0234 board (this is cheaper than pre-built ones than feeds in the external trigger signal). Best pre-built alternative is based on the OV9281 (`Innomaker CAM-MIPIOV9281 V2`)
+
+If you want to pick your own sensor, keep reading.
 
 ## General Guidance
 

@@ -36,6 +36,7 @@ _autosave*.sch
 *.kicad_pcb.lck
 *#auto_saved_files#
 *.bak
+ibom.html
 
 # Subdirectory specific ignores since we don't support nested gitignores
 /pkg/haystack/bindings/node/native/target

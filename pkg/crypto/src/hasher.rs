@@ -157,3 +157,35 @@ impl<H: 'static + Hasher + Clone, N: 'static + typenum::Unsigned + Send + Clone>
         Box::new(self.clone())
     }
 }
+
+#[cfg(feature = "std")]
+pub struct HashedWriteable<H: Hasher, W: common::io::Writeable> {
+    hasher: H,
+    inner: W,
+}
+
+#[cfg(feature = "std")]
+impl<H: Hasher, W: common::io::Writeable> HashedWriteable<H, W> {
+    pub fn new(hasher: H, inner: W) -> Self {
+        Self { hasher, inner }
+    }
+
+    pub fn hasher(&self) -> &H {
+        &self.hasher
+    }
+}
+
+#[cfg(feature = "std")]
+#[async_trait]
+impl<H: Hasher, W: common::io::Writeable> common::io::Writeable for HashedWriteable<H, W> {
+    async fn write(&mut self, data: &[u8]) -> common::errors::Result<usize> {
+        self.hasher.update(data);
+
+        self.inner.write(data).await
+    }
+
+    async fn flush(&mut self) -> common::errors::Result<()> {
+        self.inner.flush().await
+    }
+}
+

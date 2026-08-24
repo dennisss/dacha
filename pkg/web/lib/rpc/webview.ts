@@ -15,7 +15,8 @@ function post_message_webview(msg) {
 interface ActiveRequest {
     state: StreamingResponseState,
     abort_signal: AbortSignal,
-    abort_listener: any
+    abort_listener: any,
+    start_time: Date
 }
 
 let INSTANCE = null;
@@ -64,6 +65,9 @@ export class ChannelWebView {
                 // Cleaning up.
                 req.abort_signal.removeEventListener('abort', req.abort_listener);
                 this._active_requests.delete(msg.rpc_response.request_id);
+
+                // let t = new Date();
+                // console.log('RPC Latency', t.getTime() - req.start_time.getTime());
             }
 
             if (req.state.recv_waiter) {
@@ -83,6 +87,8 @@ export class ChannelWebView {
         // TODO: Verify there is no overflow risk.
         let request_id = this._last_request_id + 1;
         this._last_request_id = request_id;
+
+        let start_time = new Date();
 
         post_message_webview({
             start_rpc: {
@@ -110,7 +116,8 @@ export class ChannelWebView {
         this._active_requests.set(request_id, {
             state,
             abort_listener,
-            abort_signal
+            abort_signal,
+            start_time
         });
     }
 }

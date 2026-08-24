@@ -248,6 +248,7 @@ pub async fn run_write_command_ext(cmd: WriteCommand, ext: WriteExtraArgs) -> Re
 
     let mut hasher = SHA256Hasher::default();
 
+    // TODO: Pipeline the reading and writing.
     while offset < image_size {
         let n = core::cmp::min(BUFFER_SIZE, image_size - offset);
         image_file.read_exact(&mut buffer[..n]).await?;
@@ -383,6 +384,10 @@ pub async fn run_write_command_ext(cmd: WriteCommand, ext: WriteExtraArgs) -> Re
             None,
         )?;
     }
+
+    // Sometimes takes time before the root fs is fully loaded.
+    // (else the next command will fail.)
+    executor::sleep(Duration::from_secs(2)).await?;
 
     // Example command: sudo btrfs filesystem resize max /media/dennis/rootfs
     println!("Expanding root filesystem...");

@@ -1,18 +1,12 @@
 use common::errors::*;
 use peripherals::i2c::*;
-
-#[derive(Debug, Clone, Copy)]
-pub struct Acceleration {
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
-}
+use math::matrix::{vec3d, Vector3d};
 
 #[async_trait]
 pub trait Accelerometer: 'static + Send + Sync {
     /// Reads the current X, Y, Z acceleration data from the device.
     /// Returns the acceleration vector with units in standard gravity (g).
-    async fn read_acceleration(&mut self) -> Result<Acceleration>;
+    async fn read_acceleration(&mut self) -> Result<Vector3d>;
 }
 
 pub async fn create_accelerometer(mut i2c: I2CHostDevice) -> Result<Box<dyn Accelerometer>> {
@@ -50,7 +44,7 @@ impl LIS2DW12 {
     const EXPECTED_WHO_AM_I: u8 = 0x44;
 
     // Sensitivity factor for +/-2g in High-Performance mode (0.244 mg/digit)
-    const SENSITIVITY_G: f32 = 0.000244;
+    const SENSITIVITY_G: f64 = 0.000244;
 
     /// Initializes the LIS2DW12 device, verifies the chip ID, and configures it 
     /// for high-quality static measurement (High-Performance, Low-Noise, +/-2g).
@@ -86,7 +80,7 @@ impl LIS2DW12 {
 
 #[async_trait]
 impl Accelerometer for LIS2DW12 {
-    async fn read_acceleration(&mut self) -> Result<Acceleration> {
+    async fn read_acceleration(&mut self) -> Result<Vector3d> {
         // Auto-increment is enabled via IF_ADD_INC in CTRL2, so writing the starting 
         // register address (OUT_X_L) allows bursting all 6 bytes.
         self.i2c.write(&[Self::REG_OUT_X_L]).await?;
@@ -101,11 +95,11 @@ impl Accelerometer for LIS2DW12 {
         let raw_y = i16::from_le_bytes([buf[2], buf[3]]) >> 2;
         let raw_z = i16::from_le_bytes([buf[4], buf[5]]) >> 2;
 
-        Ok(Acceleration {
-            x: (raw_x as f32) * Self::SENSITIVITY_G,
-            y: (raw_y as f32) * Self::SENSITIVITY_G,
-            z: (raw_z as f32) * Self::SENSITIVITY_G,
-        })
+        Ok(vec3d(
+            (raw_x as f64) * Self::SENSITIVITY_G,
+            (raw_y as f64) * Self::SENSITIVITY_G,
+            (raw_z as f64) * Self::SENSITIVITY_G,
+        ))
     }
 }
 
@@ -119,7 +113,7 @@ impl LIS2DH12 {
     const REG_CTRL1: u8 = 0x20;
     const REG_CTRL4: u8 = 0x23;
     const REG_OUT_X_L: u8 = 0x28;
-    const SENSITIVITY_G: f32 = 0.001; // 1 mg/digit in HR mode at +/-2g
+    const SENSITIVITY_G: f64 = 0.001; // 1 mg/digit in HR mode at +/-2g
 
     pub async fn create(mut i2c: I2CHostDevice) -> Result<Self> {
         // Configure LIS2DH12 for High-Resolution mode (12-bit), +/-2g
@@ -135,7 +129,7 @@ impl LIS2DH12 {
 
 #[async_trait]
 impl Accelerometer for LIS2DH12 {
-    async fn read_acceleration(&mut self) -> Result<Acceleration> {
+    async fn read_acceleration(&mut self) -> Result<Vector3d> {
         let mut buf = [0u8; 6];
 
         // To read multiple bytes on the DH12, the MSb (bit 7) of the sub-address must be 1 (0x80)
@@ -148,10 +142,10 @@ impl Accelerometer for LIS2DH12 {
         let raw_y = i16::from_le_bytes([buf[2], buf[3]]) >> 4;
         let raw_z = i16::from_le_bytes([buf[4], buf[5]]) >> 4;
 
-        Ok(Acceleration {
-            x: (raw_x as f32) * Self::SENSITIVITY_G,
-            y: (raw_y as f32) * Self::SENSITIVITY_G,
-            z: (raw_z as f32) * Self::SENSITIVITY_G,
-        })
+        Ok(vec3d(
+            (raw_x as f64) * Self::SENSITIVITY_G,
+            (raw_y as f64) * Self::SENSITIVITY_G,
+            (raw_z as f64) * Self::SENSITIVITY_G,
+        ))
     }
 }

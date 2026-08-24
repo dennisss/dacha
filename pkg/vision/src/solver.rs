@@ -405,7 +405,7 @@ impl<'a> NonLinearSolver<'a> {
 
                 dampening_mat
 
-            } else {
+            } else if jacobian_thin.len() < 100 {
                 // For small matrices (threshold not well tuned), direct inversion is doing to be faster.
 
                 // TODO: Don't need to clone 'b'
@@ -436,6 +436,52 @@ impl<'a> NonLinearSolver<'a> {
                 };
 
                 a_inv * b
+            } else {
+
+                let (mut a, b) = {
+                    if let Some(v) = &state.cache {
+                        v.clone()
+                    } else {
+                        let mut a = MatrixXd::zero_with_shape(jacobian_thin.cols(), jacobian_thin.cols());
+                        let mut b = VectorXd::zero_with_shape(jacobian_thin.cols(), 1);
+
+                        vision_ffi::compute_jtj(
+                            jacobian_thin.as_ref(),
+                            state.error.as_ref(),
+                            jacobian_thin.rows(),
+                            jacobian_thin.cols(),
+                            a.as_mut(),
+                            b.as_mut()
+                        );
+
+                        state.cache = Some((a.clone(), b.clone()));
+
+                        (a, b)
+                    }
+                };
+
+
+                let d = 1.0 + dampening;
+                for i in 0..a.rows() {
+                    a[(i, i)] *= d;
+                }
+
+                let mut step_thin = VectorXd::zero_with_shape(jacobian_thin.cols(), 1);
+
+                let s = Instant::now();
+
+                if !vision_ffi::solve_sparse_ldlt(a.as_ref(), b.as_ref(), step_thin.as_mut()) {
+                    //
+                }
+
+                let e = Instant::now();
+
+                if self.logging_enabled {
+                    println!("=> Solve Time: {:?}", e - s);
+                }
+
+
+                step_thin
             }
         };
 
@@ -470,7 +516,6 @@ impl<'a> NonLinearSolver<'a> {
             );
         }
     }
-
 }
 
 /// Efficiently calculates the diagonal entries of '(mat^T) mat'

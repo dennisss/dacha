@@ -6,9 +6,12 @@ export function camera_orientation(camera_status) {
 
     let accel = camera_status.accelerometer.value;
 
-    let upside_down = accel.y > 0 ? true : false;
+    let y = accel.values[1];
+    let z = accel.values[2];
 
-    let horizon_angle = Math.round((180 / Math.PI) * Math.atan(accel.z / Math.abs(accel.y)));
+    let upside_down = y > 0 ? true : false;
+
+    let horizon_angle = Math.round((180 / Math.PI) * Math.atan(z / Math.abs(y)));
 
     return {
         upside_down,

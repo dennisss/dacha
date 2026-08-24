@@ -54,11 +54,14 @@ use std::{
     sync::Arc,
 };
 
+use common::io::Writeable;
 use common::{errors::*, io::Readable, line_builder::LineBuilder};
-use crypto::{hasher::Hasher, sha256::SHA256Hasher};
 use dev_source_proto::dev::*;
-use file::{GlobIterator, LocalPath, LocalPathBuf};
+use file::{GlobIterator, LocalPath, LocalPathBuf, LocalFile, LocalFileOpenOptions};
 use google_auth::GoogleServiceAccount;
+use crypto::hasher::*;
+use crypto::sha256::SHA256Hasher;
+
 
 const EXTERNAL_FILES_PROTO_PATH: &'static str = "external_files.pbtxt";
 const GIT_EXCUDE_FILE_PATH: &'static str = ".git/info/exclude";
@@ -119,7 +122,7 @@ enum Command {
     /// Downloads all external tracked files into the local workspace
     /// -> Skips any files that already exist).
     #[arg(name = "fetch")]
-    Fetch,
+    Fetch(FetchCommand),
     // TODO: Need a command to verify that all files in cloud storage have the correct contents
     // and hash.
 
@@ -258,7 +261,7 @@ async fn run_add_command(cmd: AddCommand) -> Result<()> {
     let allowlisted_extensions = [
         "zip", "pdf", "png", "svg", "stl", "stp", "step", "csv", "gbl", "gtp", "gbp", "g2", "g3", "ipc", "dxf",
         "gcode", "bgcode", "nc", "drl", "gbr", "gto", "gts" , "gbo", "gbs", "gm1", "gtl", "jpg", "jpeg", "webp",
-        "3mf", "woff2", "ttf",  "bin"
+        "3mf", "woff2", "ttf",  "bin", "deb", "hex", "gz", "elf"
     ]
         .into_iter().cloned().collect::<HashSet<&'static str>>();
 
@@ -307,23 +310,7 @@ async fn run_add_command(cmd: AddCommand) -> Result<()> {
 
         // TODO: Ideally we should mtimes to avoid re-calculating the hashes for
         // unchanged files.
-        let hash = {
-            let mut file = file::LocalFile::open(&path)?;
-            let mut hasher = SHA256Hasher::default();
-
-            let mut block = vec![0u8; 8192];
-
-            loop {
-                let n = file.read(&mut block).await?;
-                if n == 0 {
-                    break;
-                }
-
-                hasher.update(&block[0..n]);
-            }
-
-            base_radix::hex_encode(&hasher.finish())
-        };
+        let hash = hash_file(&path).await?;
 
         let mut changed = false;
         let mut status_string = "";
@@ -457,6 +444,108 @@ async fn run_list() -> Result<()> {
     Ok(())
 
 }
+
+async fn hash_file(path: &LocalPath) -> Result<String> {
+    let mut file = file::LocalFile::open(&path)?;
+    let mut hasher = SHA256Hasher::default();
+
+    let mut block = vec![0u8; 8192];
+
+    loop {
+        let n = file.read(&mut block).await?;
+        if n == 0 {
+            break;
+        }
+
+        hasher.update(&block[0..n]);
+    }
+
+    Ok(base_radix::hex_encode(&hasher.finish()))
+}
+
+#[derive(Args)]
+struct FetchCommand {
+    #[arg(positional)]
+    path: String
+}
+
+impl FetchCommand {
+    async fn run(self) -> Result<()> {
+
+        let external_files = load_external_files_proto().await?;
+
+        let base_dir = file::project_dir();
+        let glob = GlobIterator::create(&base_dir.join(self.path))?;
+
+        let client = http::SimpleClient::new(http::SimpleClientOptions::default());
+
+        for file in external_files.files() {
+            let path = base_dir.join(file.path());
+            if !glob.matches_file(&path) {
+                continue;
+            }
+
+            println!("File: {}", file.path());
+
+            if file::exists(&path).await? {
+                let existing_hash = hash_file(&path).await?;
+                if existing_hash == file.sha256_sum() {
+                    println!("=> Already downloaded!");
+                    continue;
+                }
+
+                println!("=> Exists but with different hash. Refetching...")
+            }
+
+            println!("=> Newly fetching...");
+
+
+            let req = http::RequestBuilder::new()
+                .method(http::Method::GET)
+                .uri(&format!("https://storage.googleapis.com/da-sources/sha256/{}", file.sha256_sum()))
+                .build()?;
+
+            let mut response = client
+                .request_raw(req, http::ClientRequestContext::default())
+                .await?;
+
+            if !response.ok() {
+                return Err(format_err!("Fetch request failed: {:?}", response.status()));
+            }
+
+            // tODO: Write to a temp file before comitting.
+            let mut output_file = LocalFile::open_with_options(
+                &path,
+                &LocalFileOpenOptions::new()
+                    .create(true)
+                    .truncate(true)
+                    .write(true),
+            )?;
+
+            {
+                let mut writer = HashedWriteable::new(SHA256Hasher::default(), output_file);
+
+                response.body.pipe(&mut writer).await?;
+
+                writer.flush().await?;
+
+                let hash = base_radix::hex_encode(&writer.hasher().finish());
+                if hash != file.sha256_sum() {
+                    return Err(err_msg("Mismatch in SHA256 sum of downloaded file!"));
+                }
+            }            
+
+            println!("=> Done!");
+        }
+
+        // This will set up ignores in git.
+        save_external_files_proto(external_files).await?;
+
+        Ok(())
+    }
+}
+
+
 
 #[derive(Args)]
 pub struct LicenseCheckCommand {
@@ -646,7 +735,7 @@ async fn main() -> Result<()> {
         Command::Add(cmd) => {
             run_add_command(cmd).await?;
         }
-        Command::Fetch => todo!(),
+        Command::Fetch(cmd) => cmd.run().await?,
         Command::List => run_list().await?,
         Command::LicenseCheck(cmd) => cmd.run().await?,
     }

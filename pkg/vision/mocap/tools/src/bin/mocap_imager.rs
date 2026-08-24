@@ -13,13 +13,15 @@ use common::io::{Readable, Writeable};
 use file::LocalPathBuf;
 use file::project_path;
 use mocap_proto::mocap::*;
-use protobuf::Message;
+use protobuf::{Message, StaticMessage};
+use cluster_client::id::{entity_id_to_string, normalize_entity_id};
 
 
 #[derive(Args)]
 struct Args {
     image: LocalPathBuf,
     disk: String,
+    base_config_file: Option<LocalPathBuf>,
     hardware_config: String,
 }
 
@@ -28,7 +30,25 @@ async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
 
     let mut hardware_config = CameraHardwareConfig::default();
-    protobuf::text::parse_text_proto(&args.hardware_config, &mut hardware_config)?;
+    if let Some(path) = args.base_config_file {
+        hardware_config = CameraHardwareConfig::parse(&file::read(path).await?)?;
+    }
+
+    {
+        let mut patch = CameraHardwareConfig::default();
+        protobuf::text::parse_text_proto(&args.hardware_config, &mut patch)?;
+        hardware_config.merge_from(&patch)?;        
+    }
+
+    if hardware_config.camera_id() == 0 {
+        let mut id = [0u8; 8];
+        crypto::random::secure_random_bytes(&mut id).await?;
+
+        let id = normalize_entity_id(u64::from_be_bytes(id));
+        hardware_config.set_camera_id(id);
+
+        println!("Assigned new camera id: {}", entity_id_to_string(id).unwrap());
+    }
 
     let inner_cmd = rpi_imager::WriteCommand {
         image: args.image,

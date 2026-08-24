@@ -8,6 +8,13 @@ This page explains how the OS (Linux) is setup to faciliate 3 main objectives:
 
 Note that we are also targetting a very lightweight setup that is plug-n-play and uses minimum system resources so that <256MB of RAM systems can run all the software. That means that we use minimal software management layers and services on the camera side.
 
+## TLDR
+
+If you are building your own camera or want to reflash the latest software, do the following:
+
+1. [Get or build an image](#building-image)
+2. [Flash the image to your compute board](#provisioning)
+
 ## Software/Config Management
 
 Each camera essentially has the following data stored in it that we will need to push/update over time:
@@ -27,7 +34,6 @@ Each camera essentially has the following data stored in it that we will need to
         - This is the standard Pi file read by the bootloader to do initialize OS/hardware setup.
         - The base image will also have a `config-base.txt` file that contains base settings and is copied into `config.txt`
         - During provisiong and updates, `config.txt` is effectively always `config-base.txt` with customizations merged on top of it based on `camera_hardware.pb`.
-    - `/etc/machine-id`
 
 As a general rule, as much as possible that is not dynamic per camera is packed into the 'Base Linux Image' to make updates easier.
 
@@ -45,26 +51,44 @@ You can also read these two pages for additional references on the image setup:
 - [//pkg/rpi/index.md](/pkg/rpi/index.md)
 - [//pkg/rpi/doc/compute_module.md](/pkg/rpi/doc/compute_module.md)
 
-## Building Image
+## [Building Image](#building-image)
 
-Building the base linux image can be done using the following steps.
+Either you can fetch the latest prebuilt version of the image by running the following command:
 
-First build the camera software:
+```bash
+cargo run --bin source_control -- fetch dist/third_party/pi-gen/Daspbian-mocap-lite.img.gz
+```
+
+Or you can build the base linux image from source using the remaining steps in this section:
+
+**Build Software**
+
+Either fetch the latest prebuilt version of all the software packages
+
+```bash
+cargo run --bin source_control -- fetch 'dist/pkg/vision/mocap/*.deb'
+```
+
+Or build the camera software from source:
 
 ```bash
 cargo run --bin mocap_deb -- build supervisor
 cargo run --bin mocap_deb -- build camera
 ```
 
-Then follow the image building instructions [here](pkg/rpi/index.md#building). The main change should be that the `build-docker.sh` command should change to the following:
+**Build Image**
+
+Then follow the image building instructions [here](pkg/rpi/index.md#building). The main change should be that the `build_image.sh` command should change to the following:
 
 ```bash
-./build-docker.sh -c configs/mocap
+./pkg/rpi/scripts/build_image.sh mocap
 ```
 
-## Provisioning
+## [Provisioning](#provisioning)
 
 Now we need to flash the image and all hardware specific configs.
+
+WARNING: Reflashing a camera will reset its id and internal calibration data. If you are trying to reflash an existing camera, copy the `camera_hardware.pb` file from the boot partition and then pass it to `mocap_imager` below using `--base_config_file=path/to/old_camera_hardware.pb`.
 
 Plug in the camera into the USB port of your computer (using the 5 pin header), then run the following to flash EEPROM customizations and mount the eMMC/SDCard as a disk on your computer (additional docs / prequisites [here](/pkg/rpi/doc/compute_module.md)):
 
@@ -78,9 +102,9 @@ Then run the following to flash the image to the eMMC/SDCard:
 cargo build --bin mocap_imager --release
 
 sudo target/release/mocap_imager \
-    --image=third_party/pi-gen/deploy/2026-08-12-Daspbian-Mocap-lite.img.gz \
+    --image=dist/third_party/pi-gen/Daspbian-mocap-lite.img.gz \
     --disk=mass-storage-gadget \
-    --hardware_config="compute_module: PI_CM4_LITE compute_board_revision: 6"
+    --hardware_config="compute_module: PI_CM4_LITE compute_board_revision: 9"
 ```
 
 ## Startup
@@ -91,7 +115,7 @@ When the Linux OS starts the following will happen:
     - Everything after this point is a systemd service.
 - `systemd-networkd` will start and assign an IP to the machine ([see this page](./networking.md))
 - `sshd` will start (this is mainly used for debugging / development)
-- `mocap-camera-supervisor` will start
+- `mocap-supervisor` will start
     - This runs the mDNS server that will tell the host machine about the camera's existence.
     - This will has an RPC server running on port `81` which is used for all administrative tasks like updates.
     - This service is intentionally split off from the `mocap-camera` under the expectation that this service never crashes and is always around to help debug and rescue everything else.
@@ -148,3 +172,11 @@ Just note that since we use a read only file system, all logging stays in memory
 ## SSH
 
 Assuming you know the IP address of the camera, you can login to it via SSH (username: `mocap`, password: `mocap`).
+
+If you want to manually write to the SDCard over SSH, you can run the following commands to make the disk writeable:
+
+```bash
+sudo mount -o remount,rw /
+sudo mount -o remount,rw /boot/firmware
+```
+

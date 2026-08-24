@@ -25,7 +25,7 @@ On the software side, we will use [link-local addresses](https://en.wikipedia.or
 
 ## Camera Configuration
 
-Each camera has a network hostname of the form `mocap-camera-[unique-id]` (unique id derived from `/etc/machine-id`).
+Each camera has a network hostname of the form `mocap-camera-[unique-id]`.
 
 The cameras are running Linux using `systemd-networkd` for managing the ethernet interface. The cameras are configured to just request an IPv4 + IPv6 link local address.
 

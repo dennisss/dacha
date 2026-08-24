@@ -12,7 +12,16 @@ Power consumption (based on datasheet):
     - Typical: 0.23A on 3.3V rail
     - Peak: 0.378A on 3.3V rail (~0.25A on 5V)
 
-## BOM
+## TLDR
+
+Please read all the instructions BEFORE you start doing stuff:
+
+- Buy the parts listed in the [BOM](#bom) + PCBs
+- [Flash the MCU](#flashing)
+- Assemble the PCB
+- [Do testing](#testing)
+
+## [BOM](#bom)
 
 - Sensor
     - https://www.digikey.com/en/products/detail/onsemi/AR0234CSSM00SUKA0-CP/15860697
@@ -52,6 +61,58 @@ Power consumption (based on datasheet):
     - https://www.digikey.com/en/products/detail/samsung-electro-mechanics/CL10A106KP8NNNC/3886850
 
 
+## [Flashing](#flashing)
+
+The MCU on the PCB has to be programmed with the firmware for powering on/off the camera sensor. The code that runs in the MCU is located in [this directory](/pkg/media/camera/firmware/camera_ar0234_power).
+
+It is recommended (and safest) to flash it before you solder it to the PCB though you can also program it after it is on the PCB.
+
+To get the firmware, either, fetch a prebuilt blob:
+
+```bash
+cargo run --bin source_control -- fetch dist/pkg/media/camera/firmware/camera_ar0234_power.hex
+```
+
+Or build it from source:
+
+```bash
+./pkg/media/camera/firmware/camera_ar0234_power/build.sh
+```
+
+Then, for flashing it, you will need:
+
+- [USB UPDI Programmer](https://www.adafruit.com/product/5893) : High voltage one is ideal so that you can reprogram later if needed. Non-high voltage ones also work but you will only have one shot at programming.
+- For programming before soldering:
+    - [SOIC-8 150mil socket](https://www.amazon.com/dp/B0DY67PH8R)
+- For programming after soldering
+    - Either use the testing board to be mentioned [later](#testing) or get a SOIC-8 clip like [one of these](https://www.digikey.com/en/products/detail/pomona-electronics/5250/745102)
+
+You will need to connect the programmer to 3.3V, GND and the ENABLE_3V3 (PA0) pin on the MCU.
+
+Then you can run the following command to program the MCU:
+
+```bash
+./pkg/media/camera/firmware/camera_ar0234_power/upload.sh
+```
+
+Note: Running this command requires that you have `pymcuprog` installed.
+
+## [Testing](#testing)
+
+After you have soldered the board, you should always check that there is no continuitiy between GND, 3.3V, 1.8V, 1.2V, 2.8V rails on the board (with a multimeter).
+
+Then we have a standalone testing board whos job is to verify that there are signs of life from the sensor (before wiring up the camera to an expensive Raspberry Pi for final testing):
+
+- Make the board in [this directory](/pkg/media/camera/boards/camera_tester/)
+    - The enclosure for this board is `camera-tester-holder.stl`
+    - The 5-pin header connects to this [CSI breakout](https://www.amazon.com/dp/B09VPKWL1G)
+    - The 3.3V/GND pin header should go to a current limited PSU (0.5A max)
+    - The other header can be used to flash the MCU if you haven't already done so (no need to power the MCU from the programmer if you already powered it from the other header)
+- Flash the nRF MCU with the [nordic_radio_dongle firmare](/pkg/peripherals/doc/flashing.md)
+- With the MCU connected to your computer, run the testing program:
+    - `cargo run --bin mocap_cli -- test_camera_board`
+- Once you have plugged in the camera, power on your 3.3V PSU and type `y [enter]` in the CLI
+- If it reads out a register value and doesn't error out, then it is successful.
 
 ## Notes
 

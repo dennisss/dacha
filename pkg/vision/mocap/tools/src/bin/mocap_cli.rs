@@ -707,7 +707,7 @@ impl GrabFramesCommand {
             meta_client.clone()
         ).await?;
 
-        let stub = Arc::new(MocapCameraStub::new(channel.clone()));
+        let stub = Arc::new(CameraStub ::new(channel.clone()));
 
         let mut snapshot_i = 0;
         loop {

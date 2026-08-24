@@ -215,6 +215,7 @@ impl SWDProgrammer {
                 let flash_keyr = 0x40022008;
                 let flash_cr   = 0x40022014;
                 let flash_sr   = 0x40022010;
+                let flash_acr  = 0x40022000;
 
                 // 1. Unlock Flash
                 self.write_mem32(flash_keyr, 0x45670123)?;
@@ -248,6 +249,13 @@ impl SWDProgrammer {
                 self.write_mem32(flash_cr, cr & !(1 << 0))?;
                 let cr2 = self.read_mem32(flash_cr)?;
                 self.write_mem32(flash_cr, cr2 | (1 << 31))?;
+
+                // 6. Clear the EMPTY bit (bit 16) in FLASH_ACR.
+                // (allows restarting a chip on its first flash after the factory)
+                let acr_val = self.read_mem32(flash_acr)?;
+                if (acr_val & (1 << 16)) != 0 {
+                    self.write_mem32(flash_acr, acr_val & !(1 << 16))?;
+                }
             }
         }
 
@@ -357,38 +365,27 @@ impl SWDProgrammer {
         Ok(())
     }
 
+    /// Tears down the debug session so that a subsequent hardware reset (NRST)
+    /// will cleanly boot the new firmware. The caller is responsible for
+    /// toggling the reset pin after this returns.
     pub fn reset_core(&mut self) -> Result<()> {
-        let dhcsr_addr = 0xE000EDF0;
-        let dbgkey = 0xA05F0000;
-        
-        // 1. Clear C_HALT and C_DEBUGEN first. 
-        // We MUST use `?` here to ensure it doesn't silently fail. If C_HALT is 
-        // left as 1, the core will re-halt immediately after reset, and the only 
-        // way to recover is a full power cycle!
-        self.write_mem32(dhcsr_addr, dbgkey)?;
-        
-        let aircr_addr = 0xE000ED0C;
-        let reset_cmd = 0x05FA0004;
-        
-        // 2. Issue SYSRESETREQ to software reset the system.
-        self.write_mem32(aircr_addr, reset_cmd)?;
-        
-        // Flush the AP write (ignore errors as the chip might reset mid-transfer)
-        let _ = self.transfer(false, true, 0x0C, 0);
+        // 1. Clear VC_CORERESET in DEMCR — if set, the core halts on reset
+        //    vector fetch. Persists across NRST; only POR or explicit clear
+        //    removes it.
+        self.write_mem32(0xE000EDFC, 0x00000000)?;
 
-        // 3. Power down the Debug Port (DP)
-        // If the debug power domain remains active, the MCU's internal state 
-        // (clocks, watchdogs, low-power modes) does not match a fresh boot.
-        // This survives an NRST toggle, which is why a power cycle was required!
+        // 2. Clear C_HALT and C_DEBUGEN in DHCSR so the debug logic won't
+        //    re-halt the core after reset.
+        self.write_mem32(0xE000EDF0, 0xA05F0000)?;
+
+        // 3. De-assert CDBGPWRUPREQ/CSYSPWRUPREQ — the debug power domain
+        //    survives NRST, so we must explicitly shut it down.
         let _ = self.transfer(false, false, 0x04, 0x00000000);
 
-        // 4. IMMEDIATELY DRIVE SWCLK (PA14) LOW!
-        // Prevents STM32G0 from sampling BOOT0=1 (which is multiplexed on SWCLK).
+        // 4. Drive SWCLK low — on STM32G0, PA14 doubles as BOOT0. If high
+        //    during reset (and nBOOT_SEL=0), the chip enters the bootloader.
         let _ = self.clk_pin.write(false);
         let _ = self.io_pin.write(false);
-
-        // Hold it low while the chip goes through its reset phase
-        std::thread::sleep(std::time::Duration::from_millis(50));
 
         Ok(())
     }

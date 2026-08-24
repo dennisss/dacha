@@ -5,7 +5,7 @@ use common::errors::*;
 use common::hash::FastHasherBuilder;
 use net::route::NetworkInterfaceRoute;
 use cluster_client::id::{entity_id_to_string, entity_id_from_string};
-use mocap_proto::mocap::{CameraStub , CameraSupervisorStub};
+use mocap_proto::mocap::{CameraStub , SupervisorStub};
 use ptp_proto::ptp::TimeSyncStub;
 
 /*
@@ -157,7 +157,7 @@ impl CameraResolver {
 
     pub async fn connect_to_supervisor(
         &self, endpoint: &str
-    ) -> Result<Arc<CameraSupervisorStub>> {
+    ) -> Result<Arc<SupervisorStub>> {
         let mut channel_options: rpc::Http2ChannelOptions = format!("http://{}:81", endpoint)
             .as_str()
             .try_into_result()?;
@@ -165,7 +165,7 @@ impl CameraResolver {
 
         let channel = Arc::new(rpc::Http2Channel::create(channel_options).await?);
 
-        Ok(Arc::new(CameraSupervisorStub::new(channel.clone())))
+        Ok(Arc::new(SupervisorStub::new(channel.clone())))
     }
 
 

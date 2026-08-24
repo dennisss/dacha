@@ -211,6 +211,19 @@ For the R1 heatsink:
 For the R2 heatsink:
 - Directly mount the heatsink to the back of the LED board using thermal paste (`DOW 340` recommended)
 
+
+## Thermal Paste Stencil
+
+- Stencil is 4 mil thick mylar
+- Target 2 mil final thickness after the paste is compressed
+- So the stencil is designed for ~50% area fill
+- The hexagons are designed with a 3.7mm inner diameter
+    - After cutting out on a desktop CO2 laser cutter, they will expand to a final size of ~3.9mm inner diameter
+    - So if you are getting a professionally cut stencil, you probably need to expand the shapes.
+    - If you are making it yourself, you will want to lightly sand down the surface to debur the edges of the hexagons (else you will have trouble spreading the paste).
+- Center to center distance between the hexagons is 6mm
+
+
 ## Change Log
 
 **Electronics revisions**

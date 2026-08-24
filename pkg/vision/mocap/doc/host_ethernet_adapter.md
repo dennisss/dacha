@@ -2,7 +2,7 @@
 
 In order to use the mocap cameras, you will need to directly connect the network switch to your host computer via an ethernet cable. DOT NOT connect the cameras to your home network directly.
 
-So, if you computer already has an unused ethernet port, use that and stop reading this page, else, you will need to buy an adapter and plug it into your computer.
+So, if your computer already has an unused ethernet port, use that and stop reading this page, else, you will need to buy an adapter and plug it into your computer.
 
 ## Recommendations
 

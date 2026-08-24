@@ -23,8 +23,9 @@ These are the recommended lens to buy if you want a good off the shelf option (t
 
 Keep in mind that the physical size of the lens you use is constrained by the rest of the hardware sandwidth design and needs to align with the following requirements:
 
-- TTL: ~22.5mm (+/-1mm)
+- TTL: ~22mm (+/- 0.5mm) (not including the IR filter)
     - This is the distance from the image sensor to the farthest tip of the Lens when focused.
+    - Note: For spacing calculations, you also need to add ~0.15mm since the IR filter glass shifts the position of the focal plane (so check if TTL is measured with or without any builtin IR filter).
 - Diameter:
     - 14mm (<15mm max) : When using the regular IR LED ring
     - 16mm (<17mm max) : When using a wide angle IR LED ring.
@@ -70,8 +71,9 @@ These are the best and the best components you can get for roughly the same pric
     - They don't come with any filters
 - IR Filter
     - 0.5mm thickness. 9mm diameter. 45nm FWHM
-    - Glue to the back of the lenses with 3 small drops of `DOW 3140`
+    - Glue to the back of the lenses with 3 small drops of `NOA 68T` ABOVE THE FILTER (the filter should ideally lay flat against the lens).
 - Lens Holder
     - LCP 10mm height, 20mm spacing
+    - Screws: M1.6 x 6mm : https://www.mcmaster.com/96817A401/
 
 

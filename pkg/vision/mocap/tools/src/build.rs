@@ -22,7 +22,7 @@ impl BuildCommand {
             "supervisor" => {
                 PackageConfig {
                     build_target: "//pkg/vision/mocap/camera/supervisor:mocap_camera_supervisor_deps".into(),
-                    service_name: "mocap-camera-supervisor".into(),
+                    service_name: "mocap-supervisor".into(),
                     bin_name: "built/pkg/vision/mocap/camera/supervisor/mocap_camera_supervisor".into(),
                     install_path: "opt/mocap/supervisor/bundle".into()
                 }
@@ -127,23 +127,29 @@ async fn build_package(config: &PackageConfig) -> Result<()> {
     }
 
 
-    let deb_path = project_path!(format!("third_party/pi-gen/data/{}.deb", &config.service_name)); 
+    let deb_path = project_path!(format!("dist/pkg/vision/mocap/{}.deb", &config.service_name));
+    file::create_dir_all(deb_path.parent().unwrap()).await?;
 
-    // TODO: Use command_args!
+    let start_time = Instant::now();
     {
-        let status = std::process::Command::new("dpkg-deb")
-            .args(&[
-                "--root-owner-group",
-                "--build", pkg_dir.as_str(),
-                deb_path.as_str()
-            ])
+        let status = command_args!("
+                dpkg-deb
+                -Z zstd
+                -z 3
+                --root-owner-group
+                --build {pkg_dir.as_str()}
+                {deb_path.as_str()}
+            ")
+            .env("SOURCE_DATE_EPOCH", "962409600")
             .status()?;
         if !status.success() {
             return Err(err_msg("Failed to create package"));
         }
     }
+    let end_time = Instant::now();
 
-    println!("Generated {}", deb_path.display());
+
+    println!("dpkg-deb generated {} in {:?}", deb_path.display(), end_time - start_time);
 
     Ok(())
 }

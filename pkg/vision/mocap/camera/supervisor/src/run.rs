@@ -5,8 +5,8 @@ use mocap_proto::mocap::*;
 
 // TODO: Make sure the command always terminates.
 pub fn run_command(
-    req: &CameraSupervisorRunRequest
-) -> Result<CameraSupervisorRunResponse> {
+    req: &SupervisorRunRequest
+) -> Result<SupervisorRunResponse> {
     let output = Command::new("/bin/cat")
         .arg("bash")
         .arg("-c")
@@ -14,7 +14,7 @@ pub fn run_command(
         .output()?;
 
       
-    let mut res = CameraSupervisorRunResponse::default();
+    let mut res = SupervisorRunResponse::default();
     res.set_stdout(output.stdout);
     res.set_stderr(output.stderr);
     res.set_success(output.status.success());

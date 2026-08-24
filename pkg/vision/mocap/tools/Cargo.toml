@@ -8,6 +8,7 @@ common = { path = "../../../common" }
 builder = { path = "../../../builder" }
 base_args = { path = "../../../base/args" }
 file = { path = "../../../file" }
+crypto = { path = "../../../crypto" }
 cluster_client = { path = "../../../cluster/client" }
 cluster_proto = { path = "../../../cluster/proto" }
 peripherals = { path = "../../../peripherals" }

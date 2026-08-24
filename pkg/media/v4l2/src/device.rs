@@ -133,8 +133,6 @@ impl Device {
     }
 
     pub async fn print_capabiliites(&self) -> Result<()> {
-        let file = self.handle.shared.file.lock().await?.read_exclusive();
-
         /*
         Important things in caps.device_caps:
         V4L2_CAP_STREAMING - needed to support mmap
@@ -394,8 +392,8 @@ impl Device {
                 // We will get an EPOLLERR until all the streams are turned up.
                 // TODO: Get back to a state where we can return these errors.s
                 // (Also ensure all Rust side waiters are aware when this
-                // happens). eprintln!("Unknown poll events
-                // received: {:?}", events);
+                // happens).
+                eprintln!("[v4l2] Unknown poll events received: {:?}", events);
             }
         }
     }

@@ -35,14 +35,7 @@ make flash PLATFORM=<stm32f411|stm32g031>
 *   **PPS Input**: **PB3** (TIM2_CH2)
 *   **Frame Trigger**: **PA15** (TIM2_CH1)
 *   **Strobe Trigger**: **PC6** (TIM2_CH3)
-*   **ADC Sampling**: 1 kHz (Internal Temp, VCC, PB1)
-
-### STM32F411 (Blackpill)
-*   **System Clock**: 96 MHz (HSE Crystal 25 MHz)
-*   **UART**: 115200 8N1 on **PA9** (TX) / **PA10** (RX)
-*   **PPS Input**: **PA0** (TIM2_CH1)
-*   **Frame Trigger**: **PA1** (TIM2_CH2)
-*   **Strobe Trigger**: **PA2** (TIM2_CH3)
+*   **ADC Sampling**: 1 kHz (Internal Temp, VCC, POE)
 
 ## Directory Structure
 
@@ -61,8 +54,8 @@ The `Heartbeat` packet (Type 0x04) payload has been updated to include system he
 | 0 | `temp_c_half` | Temperature in 0.5°C increments (uint8_t) |
 | 1 | `vcc_min` | Minimum VCC observed (u16 ADC) |
 | 3 | `vcc_max` | Maximum VCC observed (u16 ADC) |
-| 5 | `pb1_min` | Minimum PB1 Voltage observed (u16 ADC) |
-| 7 | `pb1_max` | Maximum PB1 Voltage observed (u16 ADC) |
+| 5 | `poe_min` | Minimum POE Voltage observed (u16 ADC) |
+| 7 | `poe_max` | Maximum POE Voltage observed (u16 ADC) |
 
 ### Voltage Conversion
 All ADC values are reported as 12-bit integers (0-4095) normalized to a **3.3V** reference, regardless of the actual VCC supply voltage.
@@ -71,7 +64,7 @@ To convert the reported `u16` value to Volts:
 ```
 Voltage (V) = (Value_Reported / 4095.0) * 3.3
 ```
-This applies to `vcc_min/max` and `pb1_min/max` fields.
+This applies to `vcc_min/max` and `poe_min/max` fields.
 
 For Temperature (`temp_c_half`):
 ```

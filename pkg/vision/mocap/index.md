@@ -8,16 +8,15 @@ The objective is to track the precise 3d position of objects in a room. This is 
 
 Note that the primary goal of this is not to make a "toy" (cost optimized). The goal is to make a "tool" with very good precision so that it can be used outside of purely visual use-cases like animation (e.g. for robotics, research, ground truth for other systems, etc.).
 
-## Overview
+## Safety
 
-The general architecture of the system is composed of the following main components:
+Note that the cameras do emit high intensity pulses of IR light. These are generally safe if you are over 3ft away from the cameras and avoid direct eye contact. If you intent on building your own or doing up close work, it is recommended to use good safety glasses like the [NoIR YG3](https://www.noirinsight.com/yg3) (my size is #52).
 
-- Markers (on the objects being tracked)
-- Motion Tracking Cameras
-    - PoE/ethernet connected cameras with onboard compute and additional hardware like LEDs
-- PoE Network Switch
-- Host Computer
-    - Synthesizing the data from all the cameras.
+## Security
+
+Note that the default shipped state of the cameras is insecure so DO NOT directly connect the cameras to the internet.
+
+This is the only easy way to make them plug-n-play without a bunch of cloud based product lockdown. If you are a power user, you can choose to re-flash the software and secure them as you see fit.
 
 ## Getting Started
 
@@ -26,11 +25,13 @@ The general architecture of the system is composed of the following main compone
 Make sure to build or source all the following materials:
 
 - N x [Mocap Cameras](./doc/camera.md)
+    - These have onboard compute to do all the pixel-level computer vision and have IR LEDs to see reflective markers.
 - 1 x [PoE+ capable network switch](./doc/network_switch.md)
 - 1 x Linux/Windows/macOS Host Computer
-    - CPU Specs: 4-core 2.2Ghz+, 8Gb RAM
+    - CPU Specs: 4-core 2.2Ghz+, 8Gb RAM (x64 Linux/Windows or Apple Silicon Mac)
+    - This is used for aggregating 
     - If you care about latency, prefer a dedicated computer or one with at least 4 cores that can be dedicated to mocap.
-    - I'm going to support all 3, but I do all my testing on Linux, so...
+    - I'm going to support Linux/Windows/macOS operating systems, but I do all my testing on Linux, so Linux is likely to be the most stable implementation.
 - 1 x [Ethernet Adapter](./doc/host_ethernet_adapter.md)
 - (N + 1) x Cat 6 or better ethernet cables
     - From the network switch to all cameras + host computer.
@@ -40,7 +41,7 @@ Make sure to build or source all the following materials:
     - These depend a lot on how you plan on mounting the cameras.
     - Cheap [reference mount](https://www.amazon.com/dp/B0776RVX64)
 - 1 x [calibration wand](./doc/wand.md)
-- M x [Markers](./doc/markers.md) to track objects or people.
+- M x [Markers](./doc/markers.md) to place on objects or people you want to track.
 
 ### Setup
 

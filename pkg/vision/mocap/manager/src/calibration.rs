@@ -21,6 +21,7 @@ use math::matrix::axis_angle::*;
 use math::matrix::{vec2d, vec3d, Vector2d, Matrix3d, Vector3d, Matrix4d};
 use vision::{CameraIntrinsicsModel, CameraExtrinsics, BundleAdjustmentSolver};
 use cluster_client::id::{entity_id_from_string, entity_id_to_string};
+use math_proto_util::VectorProtoExt;
 
 use crate::wand::*;
 use crate::matching::CameraParameters;
@@ -500,6 +501,14 @@ impl WandingCalibrationSolver {
         for cam in initial_system_state.cameras() {
             let cam_id = cam.id();
 
+            let cam_enabled = initial_system_state.config().per_camera()
+                .iter().find(|c| c.camera_id() == cam_id).map(|c| c.enabled())
+                .unwrap_or(false);
+
+            if !cam_enabled {
+                continue;
+            }
+
             let extrinsics = &camera_params.iter().find(|p| p.id == cam_id)
                 .ok_or_else(|| err_msg("Camera not declared in system_state"))?
                 .extrinsics;
@@ -511,8 +520,9 @@ impl WandingCalibrationSolver {
             }
 
             let proto = cam.camera_status().accelerometer().value();
+            let accel_vec = Vector3d::from_proto(proto)?;
 
-            let v: Vector3d = r.transpose() * vec3d(proto.x() as f64, proto.y() as f64, proto.z() as f64).normalized();
+            let v: Vector3d = r.transpose() * accel_vec.normalized();
             up_vector += v;
             num_cams += 1;
         }

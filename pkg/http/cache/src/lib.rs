@@ -9,6 +9,7 @@ use std::{
 };
 
 use common::{errors::*, io::Writeable};
+use crypto::hasher::*;
 use crypto::{hasher::Hasher, random::SharedRng, sha256::SHA256Hasher};
 use db_table::{db::ProtobufDB, query_one};
 use db_txn::TransactionalDB;
@@ -146,16 +147,13 @@ impl DiskCache {
                     .write(true),
             )?;
 
-            let mut writer = HashedWriteable {
-                hasher: SHA256Hasher::default(),
-                inner: temp_file,
-            };
+            let mut writer = HashedWriteable::new(SHA256Hasher::default(), temp_file);
 
             response.body.pipe(&mut writer).await?;
 
             writer.flush().await?;
 
-            entry.response_mut().set_body_sha256(writer.hasher.finish());
+            entry.response_mut().set_body_sha256(writer.hasher().finish());
         }
 
         // TODO: Dedup this code
@@ -199,23 +197,5 @@ impl DiskCache {
         }
 
         response_builder.build()
-    }
-}
-
-pub struct HashedWriteable<W: Writeable> {
-    hasher: crypto::sha256::SHA256Hasher,
-    inner: W,
-}
-
-#[async_trait]
-impl<W: Writeable> Writeable for HashedWriteable<W> {
-    async fn write(&mut self, data: &[u8]) -> Result<usize> {
-        self.hasher.update(data);
-
-        self.inner.write(data).await
-    }
-
-    async fn flush(&mut self) -> Result<()> {
-        self.inner.flush().await
     }
 }

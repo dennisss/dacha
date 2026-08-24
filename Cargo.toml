@@ -196,6 +196,7 @@ members = [
 	"pkg/media/camera",
 	"pkg/media/camera/proto",
 	"pkg/media/camera/service",
+	"pkg/media/camera/firmware/camera_ar0234_power",
 	"pkg/media/screen",
 	"pkg/vision",
 	"pkg/vision/proto",
@@ -296,7 +297,7 @@ debug = false
 lto = true
 opt-level = 3 
 panic = 'abort'
-debug = true
+debug = "line-tables-only"
 
 [profile.mcu-release]
 inherits = "release"

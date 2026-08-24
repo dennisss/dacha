@@ -104,7 +104,7 @@ impl Server {
             let message = match res {
                 Ok(v) => v,
                 Err(e) => {
-                    eprintln!("Invalid message from {:?}", peer_addr);
+                    eprintln!("Invalid message from {:?}: {}", peer_addr, e);
                     continue;
                 }
             };

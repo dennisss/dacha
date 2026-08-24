@@ -1,23 +1,39 @@
 syntax = "proto3";
 
+import "pkg/vision/mocap/proto/camera.proto";
+
 package mocap;
 
-service CameraSupervisor {
-    rpc Status (CameraSupervisorStatusRequest) returns (CameraSupervisorStatusResponse);
+service Supervisor {
+    rpc Status (SupervisorStatusRequest) returns (SupervisorStatusResponse);
 
-    rpc Run (CameraSupervisorRunRequest) returns (CameraSupervisorRunResponse);
+    // Runs a bash command and returns the output of the output.
+    rpc Run (SupervisorRunRequest) returns (SupervisorRunResponse);
 
+    rpc ReadFile (SupervisorReadFileRequest) returns (stream SupervisorReadFileResponse);
+
+    // Performs an update of the camera.
+    //
+    // This RPC captures a sequence of steps to perform which should start with a 
+    // 'start_update' command, followed by some operations and finally a 'commit_update'.
+    //
+    // Until 'commit_update' is sent, all commands before that are simply enqueued for
+    // execution.
+    //
     // - One response will be sent per request.
     // - At most one 'Update' RPC can be active on the server at a time.
     rpc Update (stream UpdateRequest) returns (stream UpdateResponse);
 }
 
-message CameraSupervisorStatusRequest {
+message SupervisorStatusRequest {
 
 }
 
-message CameraSupervisorStatusResponse {
-    // Stuff like which version is currently installed
+message SupervisorStatusResponse {
+
+    CameraHardwareConfig hardware_config = 1;
+
+    // TODO: Stuff like which version is currently installed
 }
 
 message UpdateRequest {
@@ -26,9 +42,13 @@ message UpdateRequest {
 
         bytes payload_chunk = 2;
 
-        bool commit_deb = 3;
+        bool install_deb = 3;
 
-        CommitImageCommand commit_image = 4;
+        CommitImageCommand install_image = 4;
+
+        WriteFileCommand write_file = 5;
+
+        CommitUpdateCommand commit_update = 6;
     }
 }
 
@@ -40,6 +60,14 @@ message CommitImageCommand {
     // string image_id = 1;    
 }
 
+message WriteFileCommand {
+    string path = 1;
+}
+
+message CommitUpdateCommand {
+
+}
+
 message UpdateResponse {
     bool commited = 1;
 
@@ -47,12 +75,20 @@ message UpdateResponse {
 }
 
 
-message CameraSupervisorRunRequest {
+message SupervisorRunRequest {
     string command = 1;
 }
 
-message CameraSupervisorRunResponse {
+message SupervisorRunResponse {
     bytes stdout = 1;
     bytes stderr = 2;
     bool success = 3;
+}
+
+message SupervisorReadFileRequest {
+    string path = 1;
+}
+
+message SupervisorReadFileResponse {
+    bytes data = 1;
 }

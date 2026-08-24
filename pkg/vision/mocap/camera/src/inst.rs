@@ -25,6 +25,7 @@ use media_camera::v4l2::capture_buffer::*;
 use ptp::SignedDuration;
 use rpi::model::Model;
 use mocap_camera_core::*;
+use math_proto_util::VectorProtoExt;
 
 use crate::sensors::*;
 use crate::pps_divider_client::*;
@@ -51,6 +52,8 @@ pub struct MocapCamera {
 impl_resource_passthrough!(MocapCamera, resources);
 
 struct Shared {
+    hardware_config: Arc<CameraHardwareConfigContainer>,
+
     camera_sensor: CameraSensorData,
 
     v4l2_controls: Vec<v4l2::ControlDefinition>,
@@ -114,30 +117,30 @@ struct State {
 impl MocapCamera {
 
     pub async fn create(
-        config: Arc<CameraHardwareConfigContainer>,
+        hardware_config: Arc<CameraHardwareConfigContainer>,
         ptp_device: Arc<ptp::PTPDevice>
     ) -> Result<Self> {
         // Note that will reset the MCU immediately so it will be back in sync with the default
         // config on the host side.
-        let pps_divider_client = PPSDividerClient::create(config.clone()).await?;
+        let pps_divider_client = PPSDividerClient::create(hardware_config.clone()).await?;
 
         let mut strobe_dimming = None;
-        if config.local_strobe_dimming() {
+        if hardware_config.local_strobe_dimming() {
             strobe_dimming = Some(PWMChannel::open(0, 0).await?);
             strobe_dimming.as_mut().unwrap().write(STROBE_DIMMING_FREQUENCY, 0.0).await?;
         }
 
         let mut pio_forwarder = None;
-        if config.enable_pio_trigger_forwarder() {
+        if hardware_config.enable_pio_trigger_forwarder() {
             pio_forwarder = Some(PIO::create_pin_forwarder(16, 22)?);
         }
         
         let mut rgb_leds = None;
-        if config.local_rgb_control() {
+        if hardware_config.local_rgb_control() {
             rgb_leds = Some(WS2812SPIController::create("/dev/spidev0.0")?);
         }
 
-        let mut i2c_bus = I2CHostController::open(&config.accelerometer_i2c_device())?;
+        let mut i2c_bus = I2CHostController::open(&hardware_config.accelerometer_i2c_device())?;
         let accelerometer = Some(create_accelerometer(i2c_bus.device(0x19)).await?);
 
         // TODO: Have all key controls like exposure and analog/digital gains exported to a config file that we can re-initialize everything on boot.
@@ -200,6 +203,7 @@ impl MocapCamera {
         resources.register_dependency(capture_processor.clone()).await;
 
         let shared = Arc::new(Shared {
+            hardware_config,
             pps_divider_client,
             camera_sensor,
             v4l2_controls,
@@ -406,6 +410,8 @@ impl MocapCamera {
     pub async fn status(&self) -> Result<MocapCameraStatus> {
         let mut proto = MocapCameraStatus::default();
 
+        proto.set_hardware_config((&**self.shared.hardware_config).clone());
+
         {
             let p = proto.sensor_mut();
             p.set_model_name(&self.shared.camera_sensor.model_name);
@@ -460,12 +466,9 @@ impl MocapCamera {
                 if let Some(accelerometer) = &mut state.accelerometer {
                     // TODO: Cache this.
                     let accel = accelerometer.read_acceleration().await?;
-                    
-                    let v = proto.accelerometer_mut().value_mut();
+
                     // TODO: Customize whether or not this needs to be flipped based on the camera model.
-                    v.set_x(accel.x);
-                    v.set_y(accel.y);
-                    v.set_z(accel.z);
+                    proto.accelerometer_mut().set_value(accel.to_proto());
                 }
 
                 Result::<_, Error>::Ok(proto)

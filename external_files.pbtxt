@@ -1,5 +1,45 @@
 files: [
     {
+        path: "dist/pkg/media/camera/firmware/camera_ar0234_power.hex"
+        size: 1600
+        sha256_sum: "1c67e6e2d923176c4b4622124896b18b21dc5c65658b78d6906facc05c534cab"
+    },
+    {
+        path: "dist/pkg/rpi/ar0234-driver-rpi-arm64.deb"
+        size: 13372
+        sha256_sum: "fdc60a9a792dbaa57708eb35d3e181408e066379dc895227b7e9e5cd52f9c7a7"
+    },
+    {
+        path: "dist/pkg/rpi/linux-kernel-dacha-rpi-arm64.deb"
+        size: 40620382
+        sha256_sum: "d006ea59bd4b36c9cde841c6ef3f66cb20c0eb0abd228d7ab98c7c5fe7219c8f"
+    },
+    {
+        path: "dist/pkg/vision/mocap/mocap-camera.deb"
+        size: 9385962
+        sha256_sum: "b79124c759ddee9f09dd05766f81144d034759f8d47eae8dcacda4b937ef717f"
+    },
+    {
+        path: "dist/pkg/vision/mocap/mocap-supervisor.deb"
+        size: 3760842
+        sha256_sum: "df7c4e9af04fa0fca8b0f29bf802bd6252788a72563e5278ea622b67c805bdeb"
+    },
+    {
+        path: "dist/pkg/vision/mocap/pps_divider.bin"
+        size: 6588
+        sha256_sum: "7e00b973f56a8e9862a7b38de3d836f765bd681bd099bd532fe6abc90b3347af"
+    },
+    {
+        path: "dist/pkg/vision/mocap/pps_divider.elf"
+        size: 190572
+        sha256_sum: "e8d42a8de2e91ecfebfcc622da24f16fb4debf1c66ee16c72fbae7348ed96a48"
+    },
+    {
+        path: "dist/third_party/pi-gen/Daspbian-mocap-lite.img.gz"
+        size: 140307529
+        sha256_sum: "bb09d4ff567ba78c77de5bdd0f9ebf15609b83af18d907bb67d4a930cb71ff22"
+    },
+    {
         path: "doc/asus_ssd_fan/images/image.jpg"
         size: 345122
         sha256_sum: "ce6a100f33508a33817d417c14c573ffa1d8fee2f7204925f932a138f56e6687"
@@ -2540,6 +2580,16 @@ files: [
         sha256_sum: "a1068d148ac3ab6987c742ce50f4d320f32922696a394b104b305314530296d1"
     },
     {
+        path: "pkg/vision/mocap/parts/compute-board-holder-outer.stl"
+        size: 103484
+        sha256_sum: "e697d87abb112ce32e5415657940ea9d50a284f5802f725d67d7de7b04005b41"
+    },
+    {
+        path: "pkg/vision/mocap/parts/compute-board-holder.stl"
+        size: 448284
+        sha256_sum: "b04e6bbd4ce1235b8f96807fa6bcda192714270a787499c9cde5249580547d8a"
+    },
+    {
         path: "pkg/vision/mocap/parts/dot-threaded-rod-holder.stl"
         size: 117984
         sha256_sum: "99f96bac66c197678110df59d6aec3b38c50f49337742327ef969a16c10b6032"
@@ -2575,19 +2625,44 @@ files: [
         sha256_sum: "ca8f546a9c31a19c9d89062d3d814cbf8894a5ae131a083d1e06d134665ac41d"
     },
     {
-        path: "pkg/vision/mocap/parts/led-heatsink-spacer.stl"
-        size: 57684
-        sha256_sum: "742d7da31ed2ec55c0bc28c647d38c3626d5ccb43751272dc865c23dba214d49"
-    },
-    {
-        path: "pkg/vision/mocap/parts/led-heatsink.step"
+        path: "pkg/vision/mocap/parts/led-heatsink-r1.step"
         size: 238964
         sha256_sum: "93ce21cbe2bb78b5b1e14517f894c59b4b6decc53a774a84d0d1c7eecc05db50"
     },
     {
-        path: "pkg/vision/mocap/parts/led-heatsink.stl"
+        path: "pkg/vision/mocap/parts/led-heatsink-r1.stl"
         size: 783384
         sha256_sum: "0a61a76c36c06b34cb925be0c0e9c37c83e78403050ff21ee38684efbe5ca454"
+    },
+    {
+        path: "pkg/vision/mocap/parts/led-heatsink-r2-stencil-clamp.stl"
+        size: 588884
+        sha256_sum: "2ed6d38119c7c87bd2aecb43a65ae14e642e3aa03803486a5fc12b913caef220"
+    },
+    {
+        path: "pkg/vision/mocap/parts/led-heatsink-r2-stencil-holder.stl"
+        size: 702484
+        sha256_sum: "8a674fd498ab730e2b9536796e19f17c2bc85771b294444b83724f6d6ad0b03e"
+    },
+    {
+        path: "pkg/vision/mocap/parts/led-heatsink-r2-stencil.dxf"
+        size: 301462
+        sha256_sum: "fac6ba277efe1664a14f745b11143a8185d51e55c37da1e7982fc00edd1ac408"
+    },
+    {
+        path: "pkg/vision/mocap/parts/led-heatsink-r2-stencil.svg"
+        size: 46003
+        sha256_sum: "ba4befb7023accdeb19e09eb20dd927fc76ee5bb3664d91a9e7b66e1e965b3e7"
+    },
+    {
+        path: "pkg/vision/mocap/parts/led-heatsink-r2.step"
+        size: 135271
+        sha256_sum: "5577cf689547a97e50ac86b60c4a5404ceccb796458cdfefa397b1fab3fb550c"
+    },
+    {
+        path: "pkg/vision/mocap/parts/led-heatsink-spacer.stl"
+        size: 57684
+        sha256_sum: "742d7da31ed2ec55c0bc28c647d38c3626d5ccb43751272dc865c23dba214d49"
     },
     {
         path: "pkg/vision/mocap/parts/led-tester-holder.stl"
@@ -2603,6 +2678,16 @@ files: [
         path: "pkg/vision/mocap/parts/lens-focus-tool.stl"
         size: 96684
         sha256_sum: "0ff8a8ce9c820f22764b4850545092a37fd93b0edc6c214e35f5295fef3ec2f0"
+    },
+    {
+        path: "pkg/vision/mocap/parts/lens-holder-holder-lcp.3mf"
+        size: 143023
+        sha256_sum: "2620666889c4d77b594940719a79fbe20823f7b8eafcd4e8c3c86bb315652a52"
+    },
+    {
+        path: "pkg/vision/mocap/parts/lens-holder-holder-lcp.stl"
+        size: 650084
+        sha256_sum: "540414e0449a35fa80afc4360ed38b21d5c23a9a63530e788499b5732fc9a0c8"
     },
     {
         path: "pkg/vision/mocap/parts/lens-holder-holder.stl"
@@ -2688,6 +2773,11 @@ files: [
         path: "pkg/vision/mocap/parts/zip-tie-plate.stl"
         size: 74884
         sha256_sum: "b0196fa54a2f7312d7454d2d3e038193c096abc51125f4ca4c9657acc481bae7"
+    },
+    {
+        path: "pkg/vision/mocap/scripts/synthetic_human_frame.png"
+        size: 3176
+        sha256_sum: "1649e255bfe980d1694629031b42be2eda735979d72532b3f82cf6fd963ef1b8"
     },
     {
         path: "testdata/cnc/3DBenchy_0.2mm_PETG_MK3S_1h23m.gcode"

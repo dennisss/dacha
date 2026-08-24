@@ -216,7 +216,7 @@ mod tests {
         let google_aaaa = IPAddress::parse(b"[2607:f8b0:4005:813::200e]")?.0;
         assert_eq!(check_ip_routable(&google_aaaa)?, false);
 
-        let local_v4 = net::ip::IPAddress::V4([192, 168, 0, 1]);
+        let local_v4 = IPAddress::V4([192, 168, 0, 1]);
         assert_eq!(check_ip_routable(&local_v4)?, true);
 
         let loopback = IPAddress::parse(b"[::1]")?.0;

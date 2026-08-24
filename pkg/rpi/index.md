@@ -82,33 +82,22 @@ Then run the following commands to build a new Raspberry Pi SD Card image:
 
 ```bash
 PI_GEN_DIR=$PWD/third_party/pi-gen
-IMG_DATE="$(date +%Y-%m-%d)"
 
 mkdir -p "${PI_GEN_DIR}/deploy"
 
 # Start an HTTP cache (will record all the apt packages used).
 # NOTE: The cache is only used for the pi image and not the base debian image.
 cargo run --bin http_proxy --release -- \
-	--port=3142 --cache_dir="${PI_GEN_DIR}/deploy/${IMG_DATE}-cache/" &
-
-cd $PI_GEN_DIR
+	--port=3142 --cache_dir="third_party/pi-gen/deploy/cache/" &
 
 # Build the base docker image
-docker build --no-cache -t pi-gen-base:latest ./docker-base
-docker save pi-gen-base:latest | gzip > ${PI_GEN_DIR}/deploy/${IMG_DATE}-pi-gen-base.tar.gz
+./pkg/rpi/scripts/build_image_base.sh
 
 # Build the pi image.
-# TODO: Pipe the IMG_DATE variable into this script to avoid regenerating the data.
-./build-docker.sh -c configs/base
+./pkg/rpi/scripts/build_image.sh base
 ```
 
-At this point you should have an `.img.gz` file in the `third_party/pi-gen/deploy` folder that you can use in the `Flashing` section.
-
-Extra internal only commands for publishing the image (don't run these):
-
-```
-gsutil -m cp -r "${PI_GEN_DIR}/deploy/${IMG_DATE}*" "gs://da-manual-us/raspbian-builds/${IMG_DATE}/"
-```
+At this point you should have an `.img.gz` file in the `dist/third_party/pi-gen/` folder that you can use in the `Flashing` section.
 
 ### [Flashing](#flashing)
 
@@ -123,7 +112,7 @@ cargo build --bin rpi_imager --release
 
 # TODO: Modify the image and disk path to match your setup. 
 sudo target/release/rpi_imager write \
-    --image=$PWD/third_party/pi-gen/deploy/2026-05-20-Daspbian-lite.img.gz \
+    --image=$PWD/dist/third_party/pi-gen/Daspbian-base-lite.img.gz \
     --disk=/dev/sdc \
     --ssh_public_key=$HOME/.ssh/id_cluster.pub
 ```
@@ -179,7 +168,7 @@ cargo build --bin rpi_imager --release
 sudo rm -rf /opt/dacha/pi/rootfs
 
 sudo ./target/release/rpi_imager extract \
-	--image=$PWD/third_party/pi-gen/deploy/2026-05-20-Daspbian-lite.img.gz \
+	--image=$PWD/dist/third_party/pi-gen/Daspbian-mocap-lite.img.gz \
 	--output_dir=/opt/dacha/pi/rootfs
 ```
 

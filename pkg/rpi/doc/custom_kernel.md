@@ -16,23 +16,7 @@ Then you just need to run the following in the root directory of this repo:
 
 NOTE: The above command should not require any user input. If it does, then likely the config patches broke.
 
-The output of running this is the `third_party/rpi/linux/build/linux-kernel-dacha-rpi-arm64.deb` file.
-
-Copy it to the pi-gen directory as follows:
-
-```
-mkdir -p third_party/pi-gen/data
-cp third_party/rpi/linux/build/linux-kernel-dacha-rpi-arm64.deb third_party/pi-gen/data/linux.deb
-```
-
 Then return to the [instructions](/pkg/rpi/index.md) for compiling the image.
-
-Backing up to a GCP bucket:
-
-```
-TIME=$(date +%Y-%m-%d)
-gsutil cp "third_party/rpi/linux/build/linux-kernel-dacha-rpi-arm64.deb" "gs://da-manual-us/rpi-linux-builds/$TIME/linux-kernel-dacha-rpi-arm64.deb"
-```
 
 ## Developing
 

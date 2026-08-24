@@ -19,6 +19,7 @@ parsing = { path = "../../../parsing" }
 macros = { path = "../../../macros" }
 image = { path = "../../../image" }
 math = { path = "../../../math" }
+math_proto_util = { path = "../../../math/proto/util" }
 media_camera = { path = "../../../media/camera" }
 media_camera_proto = { path = "../../../media/camera/proto" }
 protobuf = { path = "../../../protobuf" }

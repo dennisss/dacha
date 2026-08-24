@@ -463,6 +463,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "camera_ar0234_power"
+version = "0.1.0"
+
+[[package]]
 name = "cc"
 version = "1.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3120,6 +3124,7 @@ dependencies = [
  "image",
  "macros",
  "math",
+ "math_proto_util",
  "media_camera",
  "media_camera_proto",
  "mocap_camera_core",
@@ -3254,6 +3259,7 @@ dependencies = [
  "cluster_client",
  "cluster_proto",
  "common",
+ "crypto",
  "executor",
  "executor_multitask",
  "file",

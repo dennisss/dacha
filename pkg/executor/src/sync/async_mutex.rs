@@ -56,6 +56,19 @@ impl<T> AsyncMutex<T> {
         Ok(AsyncMutexPermit { inner: guard })
     }
 
+    pub fn try_lock<'a>(&'a self) -> Result<Option<AsyncMutexPermit<'a, T>>, PoisonError> {
+        let guard = match self.inner.try_lock() {
+            Some(v) => v,
+            None => return Ok(None)
+        };
+
+        if guard.poisoned {
+            return Err(PoisonError::MutationCancelled);
+        }
+
+        Ok(Some(AsyncMutexPermit { inner: guard }))
+    }
+
     pub async fn apply<V, F: for<'b> FnOnce(&'b mut T) -> V>(
         &self,
         f: F,

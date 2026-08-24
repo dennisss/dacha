@@ -20,7 +20,7 @@ These are recommended models that you can get brand new (you can often also find
     - $90 new
     - Good for ~4 cameras
 
-If you are purely concerned about cost, you can get old enterprise switches off eBay (these may be louder / less efficient and tend to not any more manufacturer support):
+If you are purely concerned about cost, you can get old enterprise switches off eBay (these may be louder / less efficient and tend to no longer have any more manufacturer support):
 
 - `Aruba S2500-48P-4X L3 POE+`
     - <$100 on eBay.

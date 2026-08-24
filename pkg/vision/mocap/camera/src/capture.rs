@@ -8,6 +8,7 @@ use executor::sync::AsyncMutex;
 use executor::{lock, lock_async};
 use executor::channel;
 use executor::channel::oneshot;
+use executor::child_task::ChildTask;
 use executor_multitask::{impl_resource_passthrough, ServiceResource, ServiceResourceGroup, BroadcastChannel};
 use mocap_proto::mocap::*;
 use media_camera::v4l2::capture_buffer::CaptureDMABuffer;
@@ -113,6 +114,7 @@ struct DequeuedBuffer {
     shared: Arc<Shared>,
     buf: Option<v4l2::DMABuffer<CaptureDMABuffer>>,
     dequeued_time: Duration,
+    timeout: ChildTask,
 }
 
 impl Drop for DequeuedBuffer {
@@ -263,7 +265,6 @@ impl MocapCameraCaptureProcessor {
             capture_buffers.len()
         )?;
 
-        // TODO: Just zip them.
         for (mut capture_buf, dma_buffer) in capture_buffers.into_iter().zip(dma_buffers.into_iter()) {;
             capture_buf.set_data(dma_buffer);
             Self::enqueue_buffer(&shared, capture_buf).await?;
@@ -280,6 +281,10 @@ impl MocapCameraCaptureProcessor {
             let dequeued_time: Duration = sys::ClockId::MONOTONIC.get_time()?.into();
 
             let dequeue_entry = lock!(state <= shared.state.lock().await?, {
+                if state.pending_dequeue.len() == 1 {
+                    eprintln!("V4L2 capture stream exhausted of buffers!");
+                }
+
                 state.pending_dequeue.pop_front()
             }).ok_or_else(|| err_msg("Dequeued buffer but no entry associated with it"))?;
 
@@ -294,7 +299,11 @@ impl MocapCameraCaptureProcessor {
             dequeue_entry.dequeue_done.send(DequeuedBuffer {
                 shared: shared.clone(),
                 buf: Some(buf),
-                dequeued_time
+                dequeued_time,
+                timeout: ChildTask::spawn(async move {
+                    executor::sleep(Duration::from_secs(1)).await;
+                    eprintln!("V4L2 buffer has not been re-enqueued after 1 second.");
+                })
             });
         }
 
@@ -458,8 +467,13 @@ impl MocapCameraCaptureProcessor {
 
             // TODO: Need to check for buffer errors after dequeue.
             // (we should ideally be resilient to occasional errors in the buffer)
-            let dequeued_buffer = enqueued_buffer.dequeue_done.recv().await
-                .map_err(|_| err_msg("Failed to get dequeued buffer"))?;
+            let dequeued_buffer = executor::timeout(
+                Duration::from_secs(1),
+                enqueued_buffer.dequeue_done.recv()  
+            )
+            .await
+            .map_err(|_| err_msg("Timed out while waiting for frame to be fully dequeued"))?
+            .map_err(|_| err_msg("Failed to get dequeued buffer"))?;
 
 
             processing_time.span(|| {
