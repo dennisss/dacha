@@ -74,6 +74,8 @@ These are the best and the best components you can get for roughly the same pric
     - Glue to the back of the lenses with 3 small drops of `NOA 68T` ABOVE THE FILTER (the filter should ideally lay flat against the lens).
 - Lens Holder
     - LCP 10mm height, 20mm spacing
-    - Screws: M1.6 x 6mm : https://www.mcmaster.com/96817A401/
+    - Screws: For a 1.5mm unthreaded hole
+        - M1.7 x 6mm : https://www.amazon.com/dp/B01FXMJ34S
+        - M1.6 x 6mm : https://www.mcmaster.com/96817A401/
 
 

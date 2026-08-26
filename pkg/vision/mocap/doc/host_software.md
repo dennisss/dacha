@@ -34,3 +34,5 @@ How this proto is read by the app follows a layered approach:
 ## UI
 
 The UI is currently web based (written in HTML/JavaScript). When the host software opens, it spawns a [web view](/pkg/web/view/index.md) using whatever browser runtime is available on the host machine.
+
+Communication with the UI is done by starting a HTTP server on a random port and having the web view send HTTP1 and websocket requests. Note that it is possible to do everything over IPC but some operating systems (GTKWebkit on Linux) have very small IPC connections so HTTP is better and allows standardizing the code base for usecases that are headless and want to use a detached UI accessible from a separate web browser. Also note that HTTP1 has limited concurrency in most browsers so websockets or HTTP2 are needed to have good multiplexing but HTTP2 is only easy to get working if using TLS.

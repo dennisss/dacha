@@ -1,9 +1,3 @@
-/*
-cargo run --bin mocap_deb -- supervisor
-cargo run --bin mocap_deb -- camera
-*/
-
-
 #[macro_use]
 extern crate common;
 #[macro_use]

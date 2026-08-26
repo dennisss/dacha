@@ -24,6 +24,7 @@ Parts to buy:
 - 4 x M4 6mm button head screws
     - These will attach the flat plastic guide to the exstrusion
 - 4 x M4 40mm threaded rod
+    - This should stick out ~3-4mm out of the top of the standoff.
 
 3D Printing
 

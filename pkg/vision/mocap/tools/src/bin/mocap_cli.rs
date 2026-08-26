@@ -23,7 +23,7 @@ use file::{project_path, LocalPath};
 use net::ip::SocketAddr;
 use mocap_manager::calibration::*;
 use mocap_manager::*;
-use cluster_client::id::entity_id_from_string;
+use cluster_client::id::*;
 use protobuf_json::MessageJsonSerialize;
 use mocap_manager::matching::*;
 use math::matrix::axis_angle::*;
@@ -33,49 +33,8 @@ use scpi::*;
 use image::Image;
 use mocap_camera_core::FrameProcessor;
 use vision::*;
+use math::matrix::vec2d;
 
-
-/*
-
-
-
-Checkerboard algorithms:
-- ROCHADE
-- http://vigir.ee.missouri.edu/~gdesouza/Research/Conference_CDs/ECCV_2014/papers/8692/86920766.pdf
-
-Node Id: pq2n7e8rx5622
-    cargo run --bin mocap_cli -- grab_frames \
-        --camera_addr=h206fq5m2pbe9.mocap_camera.worker.home.cluster.internal \
-        --output_dir=data/mocap_camera_calib/h206fq5m2pbe9/
-
-
-
-Node Id: na4sqzecvh7mb
-    cargo run --bin mocap_cli -- grab_frames \
-        --camera_addr=rs3gvvb179szh.mocap_camera.worker.home.cluster.internal \
-        --output_dir=data/mocap_camera_calib/rs3gvvb179szh/
-
-
-Node Id: mj1dwhmrk75ze
-    cargo run --bin mocap_cli -- grab_frames \
-        --camera_addr=ab21z2zt1gf6w.mocap_camera.worker.home.cluster.internal \
-        --output_dir=data/mocap_camera_calib/ab21z2zt1gf6w/
-
-
-
-First run:
-
-    make -C pkg/vision/mocap/pps_divider PLATFORM=stm32g031
-
-cargo run --bin mocap_cli -- flash_mcu \
-        --camera_addr=h206fq5m2pbe9.mocap_camera.worker.home.cluster.internal
-
-cargo run --bin mocap_cli -- flash_mcu \
-        --camera_addr=q3nn1z18yq6q9.mocap_camera.worker.home.cluster.internal
-
-        
-
-*/
 
 const NUM_SAMPLES: usize = 1;
 
@@ -90,14 +49,65 @@ define_arg_command!(Command {
     TestCameraBoardCommand = "test_camera_board",
     TestLEDBoardCommand = "test_led_board",
     TestLEDBoardFullPower = "test_led_board_full_power",
+    TestLEDBoardRGB = "test_led_board_rgb",
     PowerOffCommand = "power_off",
     UpdateImageCommand = "update_image",
-    FlashMCUCommand = "flash_mcu",
     GrabFramesCommand = "grab_frames",
     CalibrateExtrinsicsCommand = "calibrate_extrinsics",
     DumpMatchesCommand = "dump_matches",
-    SetRGBCommand = "set_rgb"
+    SetRGBCommand = "set_rgb",
+    ConfigureSimulationCommand = "configure_simulation"
 });
+
+/*
+
+
+cargo run --bin mocap_manager -- --port=8000 --data_dir=data/mocap_data_dir
+
+cargo run --bin mocap_manager --release -- --port=8000 --data_dir=data/mocap_data_dir
+
+cargo run --bin mocap_cli -- configure_simulation "playing: true marker_around_cube: true"
+
+cargo run --bin mocap_cli -- configure_simulation "playing: true spinning_wand: true"
+
+cargo run --bin mocap_cli -- configure_simulation "playing: true wanding_calibration: true"
+
+
+cargo run --bin mocap_cli -- test_led_board_full_power
+
+*/
+#[derive(Args)]
+pub struct ConfigureSimulationCommand {
+    #[arg(positional)]
+    proto: String,
+}
+
+impl ConfigureSimulationCommand {
+    async fn run(self) -> Result<()> {
+        let meta_client = ClusterMetaClient::create_from_environment().await?;
+
+        let channel = create_rpc_channel(
+            "localhost:8000",
+            meta_client.clone()
+        ).await?;
+
+        let stub = Arc::new(ManagerStub::new(channel.clone()));
+
+        let mut req = ExecuteRequest::default();
+        protobuf::text::parse_text_proto(
+            &self.proto,
+            req.configure_simulation_mut()
+        )?;
+
+        let ctx = rpc::ClientRequestContext::default();
+
+        stub.Execute(&ctx, &req).await.result?;
+
+        Ok(())
+    }
+
+}
+
 
 /*
 cargo run --bin mocap_cli --release -- benchmark_frame_processor
@@ -207,12 +217,17 @@ impl TestCameraBoardCommand {
 
 
 /*
-cargo run --bin mocap_cli -- test_led_board --psu_addr=10.1.0.136
+cargo run --bin mocap_cli -- test_led_board --psu_addr=10.1.0.152
 
 - Channel 1/2 on the PSU should be in serial and supply 48V
 - Channel 3 should supply 5V
 
 Note that we turn off 5V when doing IR testing since the IR testing seems to cause lots of interference and noise in the RGB LEDs (probably ground bounce due to our cheap current sense setup)
+
+TODO: I often get:
+    Resource permanent failure: USBRadio: Task Receier failed: UnexpectedEndGroup
+    Error: ErrorMessage { msg: "Device background thread failed" }
+
 
 */
 
@@ -245,7 +260,43 @@ impl TestLEDBoardFullPower {
     }
 }
 
+#[derive(Args)]
+pub struct TestLEDBoardRGB {
 
+}
+
+impl TestLEDBoardRGB {
+
+    pub async fn run(self) -> Result<()> {
+        let mut configs = peripherals_service::config::BoardConfigRegistry::defaults().await?;
+
+        let config = configs.remove(&"mocap_led_tester")
+            .ok_or_else(|| err_msg("No config with the given name"))?;
+
+        let (mut device, _) = PeripheralsDevice::create(&config).await?;
+
+        let device = Arc::new(device);
+
+
+        loop {
+            for current_led in 0..12 {
+                let mut buf = vec![];
+                for i in 0..12 {
+                    if i == current_led {
+                        buf.extend_from_slice(&[0xff, 0xff, 0xff]);
+                    } else {
+                        buf.extend_from_slice(&[0, 0, 0]);
+                    }
+                }
+
+                device.neopixel_transfer("leds", 0, &buf[..]).await?;
+                device.neopixel_show("leds").await?;
+                executor::sleep(Duration::from_millis(1000)).await?;
+
+            }
+        }
+    }
+}
 
 
 #[derive(Args)]
@@ -357,10 +408,10 @@ impl TestLEDBoardCommand {
     async fn rgb_led_test(device: &PeripheralsDevice) -> Result<bool> {
         println!("Turning on RGB LEDs (one by one)..");
         let mut passing = true;
-        for current_led in 0..12 {
+        for current_led in 0..2 {
 
             let mut buf = vec![];
-            for i in 0..12 {
+            for i in 0..2 {
                 if i == current_led {
                     buf.extend_from_slice(&[0xff, 0xff, 0xff]);
                 } else {
@@ -375,7 +426,8 @@ impl TestLEDBoardCommand {
             let v = Self::measure_average_current(device).await?;
             println!("  => RGB LED {} Current: {}", current_led, v);
 
-            passing &= Self::current_in_tolerance(v, 0.041414227);
+            // 0.041414227 if using 12 LEDs
+            passing &= Self::current_in_tolerance(v, 0.032);
         }
 
         Self::leds_off(device).await?;
@@ -657,39 +709,6 @@ impl UpdateImageCommand {
 
 }
 
-
-
-#[derive(Args)]
-struct FlashMCUCommand {
-    camera_addr: String
-}
-
-impl FlashMCUCommand {
-    async fn run(self) -> Result<()> {
-        let firmware = file::read(project_path!("pkg/vision/mocap/pps_divider/build/stm32g031/pps_divider.bin")).await?;
-        
-        let meta_client = ClusterMetaClient::create_from_environment().await?;
-        
-        let channel = create_rpc_channel(
-            &self.camera_addr,
-            meta_client.clone()
-        ).await?;
-
-        let stub = Arc::new(MocapCameraStub::new(channel.clone()));
-
-        let mut req = FlashMCURequest::default();
-        req.set_firmware(firmware);
-
-        let ctx = rpc::ClientRequestContext::default();
-
-        let res = stub.FlashMCU(&ctx, &req).await.result?;
-
-        Ok(())
-    }
-
-}
-
-
 #[derive(Args)]
 struct GrabFramesCommand {
     camera_addr: String,
@@ -769,7 +788,7 @@ impl SetRGBCommand {
             meta_client.clone()
         ).await?;
 
-        let stub = Arc::new(MocapCameraStub::new(channel.clone()));
+        let stub = Arc::new(CameraStub ::new(channel.clone()));
 
         let req = ReadFramesRequest::default();
         let ctx = rpc::ClientRequestContext::default();
@@ -792,11 +811,21 @@ impl SetRGBCommand {
     }
 }
 
-
+use protobuf::StaticMessage;
 
 /*
 cargo run --bin mocap_cli --release -- calibrate_extrinsics --log_path=data/mocap/calibration10_wanding.log
+
+
+cargo run --bin mocap_cli --release -- calibrate_extrinsics --log_path=data/mocap_data_dir/recording/1783268997955084-wanding.log
+
+
+cargo run --bin mocap_cli --release -- calibrate_extrinsics --log_path=data/mocap_data_dir/recording/1785191195988207-wanding.log
 */
+
+const CONFIG_PATCH_FILE: &'static str = "config.pb";
+
+
 
 #[derive(Args)]
 struct CalibrateExtrinsicsCommand {
@@ -808,28 +837,79 @@ impl CalibrateExtrinsicsCommand {
 
     async fn run(self) -> Result<()> {
 
-        let mut config = MocapManagerConfig::default();
-        protobuf::text::parse_text_proto(
-            &file::read_to_string(project_path!("pkg/vision/mocap/config/manager.txtpb")).await?,
-            &mut config
-        )?;
+        let data_dir = project_path!("data/mocap_data_dir");
+
+        let config = {
+            let mut config = MocapManagerConfig::default();
+            protobuf::text::parse_text_proto(
+                &file::read_to_string(project_path!("pkg/vision/mocap/config/manager.txtpb")).await?,
+                &mut config
+            )?;
+
+            let mut config = ManagerConfigContainer::create(&config)?;
+
+
+            let config_path = data_dir.join(CONFIG_PATCH_FILE);
+            if file::exists(&config_path).await? {
+                let data = file::read(&config_path).await?;
+                let diff = MocapManagerConfig::parse(&data)?;
+                config.merge_from(&diff)?;
+            }
+
+            config
+        };
+
 
         let entries = read_log_file(&self.log_path).await?;
         println!("Num Entries: {}", entries.len());
 
-        let extrinsics = MocapCameraExtrinsicsCalibrator::calibrate(&config, &entries)?;
+        let initial_system_state = {
+            let first_entry = &entries[0];
+            if !first_entry.has_system_state() {
+                return Err(err_msg("Expected first entry to have system_state"));
+            }
 
-        for cam in config.per_camera_mut() {
-            let camera_id = entity_id_from_string(cam.camera_id_str()).unwrap();
-            let extrinsics = extrinsics.get(&camera_id).unwrap();
-            cam.set_extrinsics(extrinsics.to_proto());
+            first_entry.system_state()
+        };
+
+        let mut intrinsics = config.camera_intrinsics().clone();
+        for v in intrinsics.values_mut() {
+            v.center += vec2d(0.5, 0.5);
         }
 
-        println!("{:?}", config);
+        let mut calibrator = WandingCalibrationSolver::new(
+            config.value().clone(),
+            intrinsics
+        );
+        calibrator.set_initial_status(initial_system_state.clone());
+
+        for entry in entries {
+            calibrator.add_frame(&entry)?;
+        }
+
+        let solution = calibrator.solve()?;
+
+        let mut patch = MocapManagerConfig::default();
+
+        for params in solution.params {
+            let proto = patch.new_per_camera();
+            proto.set_camera_id_str(entity_id_to_string(params.id).unwrap());
+            proto.set_intrinsics(params.intrinsics.to_proto());
+            proto.set_extrinsics(params.extrinsics.to_proto());
+        }
+        
+        // println!("{:?}", patch);
 
         Ok(())
     }
 }
+
+use mocap_manager::skeleton::*;
+use math::matrix::Vector3d;
+use math_proto_util::VectorProtoExt;
+
+
+use math::matrix::vec3d;
 
 /*
 cargo run --bin mocap_cli --release -- dump_matches
@@ -841,72 +921,192 @@ struct DumpMatchesCommand {
 }
 
 
+
 impl DumpMatchesCommand {
 
     async fn run(self) -> Result<()> {
 
-        let mut config = MocapManagerConfig::default();
-        protobuf::text::parse_text_proto(
-            &file::read_to_string(project_path!("pkg/vision/mocap/config/manager.txtpb")).await?,
-            &mut config
-        )?;
+        let data_dir = project_path!("data/mocap_data_dir");
+
+        let config = {
+            let mut config = MocapManagerConfig::default();
+            protobuf::text::parse_text_proto(
+                &file::read_to_string(project_path!("pkg/vision/mocap/config/manager.txtpb")).await?,
+                &mut config
+            )?;
+
+            let mut config = ManagerConfigContainer::create(&config)?;
+
+
+            let config_path = data_dir.join(CONFIG_PATCH_FILE);
+            if file::exists(&config_path).await? {
+                let data = file::read(&config_path).await?;
+                let diff = MocapManagerConfig::parse(&data)?;
+                config.merge_from(&diff)?;
+            }
+
+            config
+        };
+
 
         let mut params = vec![];
 
 
         for per_cam in config.per_camera() {
-            let camera_id = entity_id_from_string(per_cam.camera_id_str()).unwrap();
+            let id = per_cam.camera_id();
+
+            let intrinsics = match config.camera_intrinsics().get(&id) {
+                Some(v) => v.clone(),
+                None => continue
+            };
+
             params.push(CameraParameters {
-                id: camera_id,
-                intrinsics: CameraIntrinsicsModel::from_proto(per_cam.intrinsics()),
-                extrinsics: CameraExtrinsics::from_proto(per_cam.extrinsics()),
+                id,
+                intrinsics,
+                extrinsics: config.camera_extrinsics().get(&id).unwrap().clone(),
             });
         }
         
 
-        let entries = read_log_file(&project_path!("data/mocap/calibration.log")).await?;
-        println!("Num Entries: {}", entries.len());
+        // let entries = read_log_file(&project_path!("data/mocap_data_dir/recording/1785189642152706-human.log")).await?;
+        // let entries = read_log_file(&project_path!("data/mocap_data_dir/recording/1785191681256771-rigid.log")).await?;
 
-        // println!("{:#?}", &entries[1]);
+        // All the part 2 animations.
+        // let entries = read_log_file(&project_path!("data/mocap_data_dir/recording/1785368493461614.log")).await?;
+
+        let entries = read_log_file(&project_path!("data/mocap_data_dir/recording/1785384664118013.log")).await?;
+
+        // data/mocap_data_dir/recording/1785383746472082.log
+
+        println!("Num Entries: {}", entries.len());
 
         let mut matcher = BlobMatcher::new(config.matching());
         matcher.set_camera_parameters(&params);
+
 
         let num_cameras = params.len();
 
         let mut out = MocapTrackingLog::default();
 
+
+        for cam in &params {
+            let proto = out.new_cameras();
+            proto.set_id(cam.id);
+            for v in cam.extrinsics.translation.as_ref() {
+                proto.add_translation(*v);
+            }
+
+            for v in cam.extrinsics.rotation.as_ref() {
+                proto.add_rotation(*v);
+            }
+        }
+
+        let mut skeleton_tracker = SkeletonTracker::default();
+
+        {
+            let mut config = config.skeleton_tracker().clone();;
+            config.clear_skeletons();
+            config.new_skeletons().set_id(1u32);
+            skeleton_tracker.set_config(config);
+
+            out.add_skeletons(skeleton_tracker.config_patch().skeletons()[0].as_ref().clone());
+        }
+        skeleton_tracker.set_skeleton_searching(1u32, true);
+
+
+        let mut rigid_body_tracker = {
+            let mut tracker_config = config.rigid_body_tracker().clone();
+            tracker_config.clear_bodies();
+
+            let w = config.wand();
+            let pts = vec![
+                vec3d(0., 0.07, 0.),
+                vec3d(-0.0606, -0.035, 0.),
+                vec3d(0.0606, -0.035, 0.),
+                vec3d(0.02165, -0.025, 0.),
+            ];
+
+            let body = tracker_config.new_bodies();
+            body.set_id(1u32);
+
+            for pt in pts {
+                body.add_points(pt.to_proto());
+            }
+
+
+            out.set_rigid_body_tracker(tracker_config.clone());
+
+            let mut tracker = RigidBodyTracker::default();
+            tracker.set_config(tracker_config);
+    
+            tracker
+        };
+
+        
         let start = Instant::now();
 
         // let profile = executor::spawn(perf::profile_self(Duration::from_secs(10)));
+        let mut skeleton_time = Duration::ZERO;
 
         // TODO: Skip entries without blob data.
-        for entry in entries {
+        for (i, entry) in entries.into_iter().enumerate() {
 
-            let points = matcher.run(entry.blobs());
+            if !entry.has_blobs() {
+                continue;
+            }
+
+            let idx = out.entries().len();
+
+            matcher.run(entry.blobs());
+
+            rigid_body_tracker.run(&matcher.points());
+
+            for p in skeleton_tracker.to_state_protos() {
+                if p.mode() == SkeletonStateProto_Mode::LOST /* || idx == 4352 */ {
+                    skeleton_tracker.set_skeleton_searching(p.id(), true);
+                }
+            }
+
+            let s = Instant::now();
+            skeleton_tracker.run(entry.blobs().frame_timestamp(), &matcher.points());
+            skeleton_tracker.backpropagate_predicted_points(&mut matcher);
+            let e = Instant::now();
+
+            skeleton_time += e - s;
 
             // println!("# points: {}", points.len());
 
             let proto = out.new_entries();
 
-            for cam in &params {
-                let proto = proto.new_cameras();
-                proto.set_id(cam.id);
-                for v in cam.extrinsics.translation.as_ref() {
-                    proto.add_translation(*v);
+            for p in matcher.points() {
+                let mut p = p.to_proto();
+
+                // // Mainly to compress the massive json file.
+                // if p.camera_ids().len() > 1 {
+                //     p.camera_ids_mut().truncate(1);
+                // }
+
+                for v in p.position_mut().values_mut() {
+                    *v = format!("{:.04}", v).parse()?;
                 }
 
-                for v in cam.extrinsics.rotation.as_ref() {
-                    proto.add_rotation(*v);
-                }
+                proto.add_points(p);
             }
 
-            for p in points {
-                proto.add_points(p.to_proto());
+            for p in skeleton_tracker.to_state_protos() {
+                proto.add_skeletons(p);
+            }
+
+            for body in rigid_body_tracker.bodies() {
+                if body.transform.is_some() {
+                    proto.add_rigid_bodies(body.to_proto());
+                }
             }
         }
 
         let end = Instant::now();
+
+        println!("Skeleton Compute TIme: {:?}", skeleton_time);
 
         // let profile = profile.join().await?;
         // file::write(project_path!("perf.pb"), profile.serialize()?).await?;

@@ -2525,9 +2525,14 @@ files: [
         sha256_sum: "e02cfd4f727f4c2ac5f486a5b0872c24f62ce5ad16a7b47e8654e90fa25c06f5"
     },
     {
-        path: "pkg/vision/mocap/parts/camera-mount.stl"
+        path: "pkg/vision/mocap/parts/camera-mount-r1.stl"
         size: 650684
         sha256_sum: "baea6ac05a49b1657fbd373cc06e74bea26ff10a407b886afa6403965a8484a6"
+    },
+    {
+        path: "pkg/vision/mocap/parts/camera-mount-r2.stl"
+        size: 650684
+        sha256_sum: "db09fc0d09cbf890ee376ccf9a5cc1748bc1dcb4e27bf3858703c127dd863fd2"
     },
     {
         path: "pkg/vision/mocap/parts/camera-tester-holder.stl"
@@ -2535,9 +2540,14 @@ files: [
         sha256_sum: "0addb7302491752f79be482e68925f611e0c909d0dd88a982da54d8b7378e099"
     },
     {
-        path: "pkg/vision/mocap/parts/case-bottom.stl"
+        path: "pkg/vision/mocap/parts/case-bottom-r1.stl"
         size: 1944484
         sha256_sum: "6d53605d801b957405f8d0ddafee2f78574a4af522167a4b4e481a6bfe60343e"
+    },
+    {
+        path: "pkg/vision/mocap/parts/case-bottom-r2.stl"
+        size: 2032084
+        sha256_sum: "31874292675fb87831599ae228bd1f2c32c5e25902a15d200352e7090a72cc1d"
     },
     {
         path: "pkg/vision/mocap/parts/case-hinge-screw.stl"
@@ -2565,14 +2575,19 @@ files: [
         sha256_sum: "c7884ee4b1c287522986dc447acb22c08af497fda86017a0263a183241c2643f"
     },
     {
-        path: "pkg/vision/mocap/parts/case-top.stl"
+        path: "pkg/vision/mocap/parts/case-top-r1.stl"
         size: 1577784
         sha256_sum: "ae5a203b70b1d87bca79ffa32c1d08598be77faa5715557d2d2809cf8e750c7d"
     },
     {
+        path: "pkg/vision/mocap/parts/case-top-r2.stl"
+        size: 1586484
+        sha256_sum: "bbf644226079c38d984d7f58e8e97f47265ad3757367dafdc3bdefe009e06aac"
+    },
+    {
         path: "pkg/vision/mocap/parts/case.3mf"
-        size: 764555
-        sha256_sum: "06d3e1286a5844aa929b82171d06fa004a50c4262eb07a7fd259728de398b1c3"
+        size: 926585
+        sha256_sum: "9d132bd9d3d59a2d79ea17a74e5661391b479fba820db016e29da45b0f1941a7"
     },
     {
         path: "pkg/vision/mocap/parts/ceiling-clip.stl"
@@ -2675,6 +2690,16 @@ files: [
         sha256_sum: "d98d0b08914fc95b680b1f8487cc8e2b17d1e79a0370d684c82bd35ad136a5db"
     },
     {
+        path: "pkg/vision/mocap/parts/lens-focus-tool-r2.3mf"
+        size: 60264
+        sha256_sum: "707a51afedc878ae29b5b1df7e4399672c18bcc50004dd6905810dc3ce38ede6"
+    },
+    {
+        path: "pkg/vision/mocap/parts/lens-focus-tool-r2.stl"
+        size: 97284
+        sha256_sum: "e31a544e091118f018526fc3e5476fb601162df689d76e6eb7b3637fa1e88259"
+    },
+    {
         path: "pkg/vision/mocap/parts/lens-focus-tool.stl"
         size: 96684
         sha256_sum: "0ff8a8ce9c820f22764b4850545092a37fd93b0edc6c214e35f5295fef3ec2f0"
@@ -2720,9 +2745,34 @@ files: [
         sha256_sum: "fa0c7611e2aac59bae3b7eb9e17345ea6eb7d7bcfc1cbce0ae0debc367370c62"
     },
     {
+        path: "pkg/vision/mocap/parts/rgb-led-diffuser.3mf"
+        size: 54137
+        sha256_sum: "6787d2723468b327dc408df35e0b62a294bfc3b05c04619d449744bc90252c30"
+    },
+    {
+        path: "pkg/vision/mocap/parts/rgb-led-diffuser.stl"
+        size: 86084
+        sha256_sum: "4c3e26d9bc1a87f103d4877bbc978f7a33093b28b3df58d90c02719be4b2756b"
+    },
+    {
+        path: "pkg/vision/mocap/parts/rigid-body-disk.dxf"
+        size: 94935
+        sha256_sum: "4356997d6acb1bab706d0453c9d44d272b4a4452be8f01e2c9c8e202ea211002"
+    },
+    {
+        path: "pkg/vision/mocap/parts/rigid-body-disk.svg"
+        size: 8288
+        sha256_sum: "705fce5f2b04bcc42c71b1e421f1916229065cd80255552a5142412d9fe8ea3f"
+    },
+    {
         path: "pkg/vision/mocap/parts/screw-holder.stl"
         size: 406684
         sha256_sum: "649cc2f7413c48104cf13a3dd4bfcf413413fe484ebb459ac31c13ce53fa7046"
+    },
+    {
+        path: "pkg/vision/mocap/parts/thread-milling-testing.stl"
+        size: 102384
+        sha256_sum: "a7d08cdb7767821d0dbd73fbff04438ad57302a52de4e6e6e86c801f6e5d689f"
     },
     {
         path: "pkg/vision/mocap/parts/tripod-holder.stl"
@@ -2746,8 +2796,8 @@ files: [
     },
     {
         path: "pkg/vision/mocap/parts/wand-standoff-40mm-rod.3mf"
-        size: 62738
-        sha256_sum: "de68f24e0b07c2a5f7e0da88a63890032ff072f3f6439211101da85c836cdade"
+        size: 75674
+        sha256_sum: "38b9a51ea48b5314eee9a658cde89371e3f82adb258c406b75fbe9cec80a3b7c"
     },
     {
         path: "pkg/vision/mocap/parts/wand-standoff-40mm-rod.stl"
@@ -2761,8 +2811,8 @@ files: [
     },
     {
         path: "pkg/vision/mocap/parts/wand.3mf"
-        size: 280268
-        sha256_sum: "0bb09fd14d9515d791fe1fdc7caf137f6ceea1325a9fd30620e4dba529f64e7b"
+        size: 280269
+        sha256_sum: "a44cf1719fa2d5d76c736c1d5735611528e964129207c959387e633cf319d7a0"
     },
     {
         path: "pkg/vision/mocap/parts/wand.stl"

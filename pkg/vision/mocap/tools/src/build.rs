@@ -6,8 +6,10 @@ use std::time::Instant;
 use common::errors::*;
 use common::io::{Readable, Writeable};
 use executor::bundle::TaskResultBundle;
-use file::LocalPathBuf;
-use file::project_path;
+use file::{LocalPath, LocalPathBuf};
+use file::{project_path, project_dir};
+
+use crate::components::*;
 
 #[derive(Args)]
 pub struct BuildCommand {
@@ -18,45 +20,39 @@ pub struct BuildCommand {
 impl BuildCommand {
 
     pub async fn run(self) -> Result<()> {
-        let pkg_config = match self.component.as_str() {
-            "supervisor" => {
-                PackageConfig {
-                    build_target: "//pkg/vision/mocap/camera/supervisor:mocap_camera_supervisor_deps".into(),
-                    service_name: "mocap-supervisor".into(),
-                    bin_name: "built/pkg/vision/mocap/camera/supervisor/mocap_camera_supervisor".into(),
-                    install_path: "opt/mocap/supervisor/bundle".into()
-                }
-            },
-            "camera" => {
-                PackageConfig {
-                    build_target: "//pkg/vision/mocap/camera:mocap_camera_deps".into(),
-                    service_name: "mocap-camera".into(),
-                    bin_name: "built/pkg/vision/mocap/camera/mocap_camera --rpc_port=82 --ptp_port=319 --hardware_config=/boot/firmware/camera_hardware.pb --mode=RPC_INSECURE".into(),
-                    install_path: "opt/mocap/camera/bundle".into()
+        let components = Component::all();
+
+        let component = components.iter().find(|c| c.name == self.component)
+            .ok_or_else(|| format_err!("Unknown component: {}", self.component))?;
+        
+        let artifact_path = project_dir().join(&component.artifact);
+
+        match &component.source {
+            ComponentSource::SoftwarePackage(pkg) => {
+                build_package(&pkg, &artifact_path).await?;
+            }
+            ComponentSource::BashCommand(cmd) => {
+                let mut child = std::process::Command::new("bash")
+                    .arg("-c")
+                    .arg(&cmd)
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::inherit())
+                    .stderr(std::process::Stdio::inherit())
+                    .spawn()?;
+
+                let status = child.wait()?;
+                if !status.success() {
+                    return Err(err_msg("Command failed!"));
                 }
             }
-            _ => {
-                return Err(format_err!("Unknown component: {}", self.component));
-            }
-        };
-
-        build_package(&pkg_config).await?;
-
+        }
+        
         Ok(())
     }
 }
 
 
-
-struct PackageConfig {
-    build_target: String,
-    service_name: String,
-    // TODO: Verify this exists in the final file system
-    bin_name: String,
-    install_path: String,
-}
-
-async fn build_package(config: &PackageConfig) -> Result<()> {
+async fn build_package(config: &PackageConfig, deb_path: &LocalPath) -> Result<()> {
     let mut b = builder::Builder::default()?;
 
     let result = b
@@ -126,8 +122,6 @@ async fn build_package(config: &PackageConfig) -> Result<()> {
         file::set_permissions(&output_path, perms).await?;
     }
 
-
-    let deb_path = project_path!(format!("dist/pkg/vision/mocap/{}.deb", &config.service_name));
     file::create_dir_all(deb_path.parent().unwrap()).await?;
 
     let start_time = Instant::now();

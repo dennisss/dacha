@@ -714,6 +714,19 @@ impl Server {
                 accepts_trailers,
             };
 
+            {
+                let scheme = {
+                    if connection_context.tls.is_some() {
+                        "https"
+                    } else {
+                        "http"
+                    }
+                };
+
+                // TODO: If there is already an existing scheme, complain if it is different (e.g. for a proxy request?
+                request_head.uri.scheme = Some(parsing::ascii::AsciiString::new(scheme));
+            }
+
             // TODO:
             // A server MUST respond with a 400 (Bad Request) status code to any
             // HTTP/1.1 request message that lacks a Host header field and to any

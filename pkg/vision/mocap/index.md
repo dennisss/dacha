@@ -22,6 +22,8 @@ This is the only easy way to make them plug-n-play without a bunch of cloud base
 
 ### Prerequisites
 
+NOTE: If you purchased cameras, they will come with some of the below items included. Please see [this page](./doc/retail_models.md) with details on what is included in sold units.
+
 Make sure to build or source all the following materials:
 
 - N x [Mocap Cameras](./doc/camera.md)

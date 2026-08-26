@@ -3,10 +3,3 @@ name = "camera_ar0234_power"
 version = "0.1.0"
 edition = "2021"
 
-[dependencies]
-
-[profile.release]
-opt-level = "s"
-panic = "abort"
-lto = true
-codegen-units = 1

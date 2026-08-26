@@ -22,7 +22,7 @@ pub struct CameraResolver {
 
 pub struct CameraConnection {
     pub ptp_stub: Arc<TimeSyncStub>,
-    pub camera_stub: Arc<CameraStub >,
+    pub camera_stub: Arc<CameraStub>,
     pub ptp_addr: String,
     pub rpc_addr: String,
 }

@@ -72,6 +72,42 @@ parts: [
             value: "BSS138"
             package: "SOT-23"
         }
+    },
+    {
+        name: "NCP163ASN280T1G"
+        source: "https://www.digikey.com/en/products/detail/onsemi/NCP163ASN280T1G/10064750"
+        height: 1
+        board_ref {
+            value: "NCP163ASN280T1G"
+            package: "SOT-23-5"
+        }
+    },
+    {
+        name: "TLV75512PDYDR"
+        source: "https://www.digikey.com/en/products/detail/texas-instruments/TLV75512PDYDR/22531581"
+        height: 1
+        board_ref {
+            value: "TLV75512PDYDR"
+            package: "DYD0005A-MFG"
+        }
+    },
+    {
+        name: "TLV74318PDBVR"
+        source: "https://www.digikey.com/en/products/detail/texas-instruments/TLV74318PDBVR/7593922"
+        height: 1
+        board_ref {
+            value: "TLV74318PDBVR"
+            package: "SOT-23-5"
+        }
+    },
+    {
+        name: "ECS-2520MV-240-DN-TR"
+        source: "https://www.digikey.com/en/products/detail/ecs-inc/ECS-2520MV-240-DN-TR/16578318"
+        height: 0.8
+        board_ref {
+            value: "ECS-2520MV-240-DN-TR"
+            package: "Oscillator_SMD_ECS_2520MV-xxx-xx-4Pin_2.5x2.0mm"
+        }
     }
 ]
 
