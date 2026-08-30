@@ -158,13 +158,16 @@ async fn main() -> Result<()> {
         ptp_device.configure_pps_output()
             .map_err(|e| format_err!("While enabling PPS output: {}", e))?;
 
+        // TODO: Use the interface bind address.
         let ptp_socket = ptp::TimestampedUdpSocket::create(
             format!("0.0.0.0:{}", args.ptp_port.value()).parse()?,
             &hardware_config.ptp_interface()
         ).await?;
 
+        let basic_node = ptp_core::BasicTimeNode::create("0.0.0.0:400".parse()?, &hardware_config.ptp_interface()).await?;
+
         // TODO: Implement an offset if we are using CM5 / Pi 5
-        let time_sync = Arc::new(ptp::TimeSyncNode::create(/* client.clone(), */ ptp_device.clone(), ptp_socket).await);
+        let time_sync = Arc::new(ptp::TimeSyncNode::create(/* client.clone(), */ ptp_device.clone(), ptp_socket, Arc::new(basic_node)).await);
 
         service.register_dependency(time_sync.clone()).await;
         server.add_service(time_sync.clone().into_service())?;

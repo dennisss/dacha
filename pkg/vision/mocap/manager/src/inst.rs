@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::{Instant, Duration};
+use std::time::{Instant, Duration, SystemTime};
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use common::errors::*;
@@ -10,11 +10,12 @@ use executor::child_task::ChildTask;
 use executor_multitask::{impl_resource_passthrough, ServiceResource, ServiceResourceGroup, BroadcastChannel};
 use cluster_client::ClusterMetaClient;
 use mocap_proto::mocap::*;
+use executor::channel::oneshot;
 use executor::bundle::TaskResultBundle;
 use cluster_client::service::address::{ServiceAddress, ServiceEntity, ServiceName};
 use cluster_client::id::{entity_id_to_string, entity_id_from_string};
 use http::Resolver;
-use ptp_proto::ptp::{TimeSyncRole, TimeSyncConfig};
+use ptp_proto::ptp::TimeSyncConfig;
 use ptp_proto::ptp::TimeSyncStub;
 use ptp_proto::ptp::TimeSyncIntoService;
 use cluster_client::service::create_rpc_channel;
@@ -41,6 +42,39 @@ use crate::side_channel::*;
 
 const CONFIG_PATCH_FILE: &'static str = "config.pb";
 
+// TODO: Move to a shared crate.
+macro_rules! log_every_sec {
+    ($($arg:tt)*) => {{
+        use std::time::Instant;
+        use std::sync::{Mutex, LazyLock};
+
+        static LAST_LOG_TIME: LazyLock<Mutex<Option<Instant>>> = LazyLock::new(|| Mutex::default());
+
+        let now = Instant::now();
+
+        let mut state = LAST_LOG_TIME.lock().unwrap();
+
+        let should_log = {
+            if let Some(last_time) = *state {
+                now > last_time && now - last_time >= Duration::from_secs(1)
+            } else {
+                true
+            }
+        };
+
+        if should_log {
+            *state = Some(now);
+        }
+
+        drop(state);
+
+        if should_log {
+            eprintln!($($arg)*);
+        }
+
+    }};
+}
+
 // TODO: Need camera list sorting everywhere (mainly in status output protos)
 
 // TODO: Auto-exposure for things like checkerboard calibration.
@@ -62,6 +96,8 @@ struct Shared {
     data_dir: LocalPathBuf,
     config_path: LocalPathBuf,
     config: AsyncRwLock<ManagerConfigContainer>,
+    config_writer_lock: AsyncMutex<()>,
+
     state: AsyncVariable<State>,
     camera_config_state: AsyncVariable<CameraConfigState>,
     merged_blobs: BroadcastChannel<Arc<ReadBlobsResponse>>,
@@ -89,6 +125,8 @@ struct State {
 
     networking_status: NetworkingStatus,
 
+    time_server_addr: String,
+
     side_channel: Option<Arc<DataSideChannel>>,
 }
 
@@ -97,7 +135,9 @@ struct CameraConfigState {
     // TODO: this is insuficient for handling restart conditions.
     camera_config_epoch: u64,
     active_camera_id: Option<u64>,
-    single_camera_override: Option<(u64, MocapCameraConfigureRequest)>
+    single_camera_override: Option<(u64, MocapCameraConfigureRequest)>,
+
+    configured: bool,
 }
 
 struct CameraEntry {
@@ -107,18 +147,18 @@ struct CameraEntry {
     ptp_addr: String,
     rpc_addr: String,
 
-    camera_stub: Arc<CameraStub >,
+    camera_stub: Arc<CameraStub>,
 
     ptp_stub: Arc<TimeSyncStub>,
     ptp_leader: bool,
 
-    /// Version of the camera config that was last successfully
-    /// pushed to this camera. 
-    camera_config_epoch: u64,
+    supervisor_stub: Option<Arc<SupervisorStub>>,
 
     task: Option<ChildTask<()>>,
 
     status: Option<CameraStatus>,
+
+    pending_save_intrinsics: Option<oneshot::Sender<Result<()>>>,
 
     // TODO: Also last time a ReadBlobs was received
     // TODO: Record number of late frames (Dropped)
@@ -184,17 +224,21 @@ impl MocapManager {
 
         let camera_config = config.initial_camera_config().clone();
 
+        let time = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_nanos() as u64;
+
         let shared = Arc::new(Shared {
             // meta_client,
             config: AsyncRwLock::new(config),
+            config_writer_lock: Default::default(),
             data_dir,
             config_path,
             state: AsyncVariable::default(),
             camera_config_state: AsyncVariable::new(CameraConfigState {
                 camera_config,
-                camera_config_epoch: 1,
+                camera_config_epoch: time,
                 active_camera_id: None,
                 single_camera_override: None,
+                configured: false,
             }),
             merged_blobs: BroadcastChannel::default(),
             tracked_points: BroadcastChannel::default(),
@@ -209,6 +253,7 @@ impl MocapManager {
 
         resources.spawn_interruptable("resolver", MocapManagerInner::service_resolver_thread(shared.clone())).await;
         resources.spawn_interruptable("merger", MocapManagerInner::frame_merger_thread(shared.clone())).await;
+        resources.spawn_interruptable("intrinsics_loader", MocapManagerInner::intrinsics_loader_thread(shared.clone())).await;
 
         let config = shared.config.read().await?;
 
@@ -235,7 +280,8 @@ impl MocapManager {
                         shared.clone(),
                         camera_id,
                         ptp_stub.clone(),
-                        camera_stub.clone()
+                        camera_stub.clone(),
+                        None,
                     ));
 
                     state.cameras.insert(camera_id, CameraEntry {
@@ -245,9 +291,10 @@ impl MocapManager {
                         camera_stub,
                         ptp_stub,
                         ptp_leader: false,
+                        supervisor_stub: None,
                         task: Some(task),
                         status: None,
-                        camera_config_epoch: 0,
+                        pending_save_intrinsics: None,
                     });
                 });
             }
@@ -329,14 +376,27 @@ impl MocapManagerInner {
 
                     // Need at least one camera to become fully configured to get a valid config set.
                     // (mainly since we need to grab control values and such that are merged on the first config.)
-                    if entry.camera_config_epoch != 0 {
+                    if camera_config_state.configured {
                         proto.set_config(camera_config_state.camera_config.clone());
-                        proto.set_camera_controls(camera_status.status.camera_controls().clone());                            
+                        proto.set_camera_controls(camera_status.status.camera_controls().clone());
                     }
 
                     proto.set_sensor(camera_status.status.sensor().clone());
                 }
             }
+        }
+
+        // Adding cameras that are enabled but not connected (since they also are required for
+        // merging frames unless disabled).
+        for camera in config.per_camera() {
+            let camera_id = camera.camera_id();
+            if !camera.enabled() || state.cameras.contains_key(&camera_id) {
+                continue;
+            }
+
+            let proto = proto.new_cameras();
+            proto.set_id(camera_id);
+            proto.set_active(camera_config_state.active_camera_id == Some(camera_id));
         }
 
         if let Some((id, config)) = &camera_config_state.single_camera_override {
@@ -474,8 +534,9 @@ impl MocapManagerInner {
             }
 
             ExecuteRequestCommandCase::ApplyCheckerboardCalibration(_) => {
-                // TODO: Apply a global config writter lock.
                 // TODO: this can't be interrupted.
+
+                let writer_lock = self.shared.config_writer_lock.lock().await?;
 
                 let (camera_id, result) = lock!(state <= self.shared.state.lock().await?, {
                     let mode = match &state.mode {
@@ -507,6 +568,8 @@ impl MocapManagerInner {
                         state.mode = Mode::Running;
                     }
                 });
+
+                drop(writer_lock);
             }
 
             ExecuteRequestCommandCase::StartWandingCalibration(_) => {
@@ -568,8 +631,9 @@ impl MocapManagerInner {
             }
 
             ExecuteRequestCommandCase::ApplyWandingCalibration(_) => {
-                // TODO: Apply a global config writter lock.
                 // TODO: this can't be interrupted.
+
+                let writer_lock = self.shared.config_writer_lock.lock().await?;
 
                 let patch = lock!(state <= self.shared.state.lock().await?, {
                     let mode = match &state.mode {
@@ -595,11 +659,15 @@ impl MocapManagerInner {
                         state.mode = Mode::Running;
                     }
                 });
+
+                drop(writer_lock);
             }
 
             ExecuteRequestCommandCase::ConfigureRigidBody(cmd) => {
                 // TODO: We can assume that an empty entry (with just an id) can be deleted.
                 // we should also generally verify we don't match empty bodies.
+
+                let writer_lock = self.shared.config_writer_lock.lock().await?;
                 
                 let mut patch = {
                     let config = self.shared.config.read().await?;
@@ -626,9 +694,13 @@ impl MocapManagerInner {
                 body.merge_from(cmd);
 
                 self.apply_config_patch(&patch).await?;
+
+                drop(writer_lock);
             }
 
             ExecuteRequestCommandCase::DeleteRigidBody(id) => {
+                let writer_lock = self.shared.config_writer_lock.lock().await?;
+                
                 let mut patch = {
                     let config = self.shared.config.read().await?;
 
@@ -652,9 +724,13 @@ impl MocapManagerInner {
                 }
 
                 self.apply_config_patch(&patch).await?;
+
+                drop(writer_lock);
             }
 
             ExecuteRequestCommandCase::SetOrigin(cmd) => {
+                let writer_lock = self.shared.config_writer_lock.lock().await?;
+
                 let mut sub = self.shared.tracked_points.subscribe(1);
                 let res = sub.recv().await?;
 
@@ -669,8 +745,11 @@ impl MocapManagerInner {
                 };
 
                 self.apply_config_patch(&patch).await?;
+
+                drop(writer_lock);
             }
             ExecuteRequestCommandCase::SetCameraEnabled(cmd) => {
+                let writer_lock = self.shared.config_writer_lock.lock().await?;
 
                 let mut patch = MocapManagerConfig::default();
 
@@ -690,6 +769,7 @@ impl MocapManagerInner {
 
                 self.apply_config_patch(&patch).await?;
 
+                drop(writer_lock);
             }
             ExecuteRequestCommandCase::StartRecording(cmd) => {
                 let initial_status = self.status().await?;
@@ -737,6 +817,7 @@ impl MocapManagerInner {
             }
 
             ExecuteRequestCommandCase::CreateSkeleton(cmd) => {
+                let writer_lock = self.shared.config_writer_lock.lock().await?;
 
                 let mut patch = {
                     let mut p = MocapManagerConfig::default();
@@ -756,9 +837,13 @@ impl MocapManagerInner {
                 patch.skeleton_tracker_mut().add_skeletons(skel.to_proto());
 
                 self.apply_config_patch(&patch).await?;
+
+                drop(writer_lock);
             }
 
             ExecuteRequestCommandCase::DeleteSkeleton(cmd) => {
+                let writer_lock = self.shared.config_writer_lock.lock().await?;
+
                 let mut patch = {
                     let mut p = MocapManagerConfig::default();
                     let config = self.shared.config.read().await?;
@@ -775,6 +860,8 @@ impl MocapManagerInner {
                 }
 
                 self.apply_config_patch(&patch).await?;
+
+                drop(writer_lock);
             }
 
             ExecuteRequestCommandCase::SetSkeletonSearching(cmd) => {                
@@ -792,6 +879,26 @@ impl MocapManagerInner {
                 self.shared.aux_rpc_server.stop().await?;
             }
 
+            ExecuteRequestCommandCase::SaveFactoryIntrinsics(cmd) => {
+
+                let (sender, receiver) = oneshot::channel();
+
+                lock!(state <= self.shared.state.lock().await?, {
+                    let entry = state.cameras.get_mut(&cmd.camera_id())
+                        .ok_or_else(|| err_msg("Unknown camera id"))?;
+
+                    if entry.pending_save_intrinsics.is_some() {
+                        return Err(err_msg("Already saving intrinsics..."));
+                    }
+
+                    entry.pending_save_intrinsics = Some(sender);
+
+                    Result::<_, Error>::Ok(())
+                })?;
+
+                receiver.recv().await
+                    .map_err(|_| err_msg("Receiver failed"))??;
+            }
             ExecuteRequestCommandCase::NOT_SET => {
                 return Err(err_msg("Unknown command"));
             }
@@ -861,6 +968,16 @@ impl MocapManagerInner {
 
         let mut resolver = CameraResolver::create().await?;
 
+        // TODO: Monitor for failures in this resource.
+        let time_server = resolver.create_time_server().await?;
+
+        let time_server_addr = time_server.local_addr()?.to_string();
+
+        println!("Time Server running on: {}", time_server_addr);
+        lock!(state <= shared.state.lock().await?, {
+            state.time_server_addr = time_server_addr;
+        });
+
         loop {
             // TODO: Explicitly rate limit the resolving rate.
             let current_cameras = resolver.resolve().await?;
@@ -884,6 +1001,7 @@ impl MocapManagerInner {
             lock!(state <= shared.state.lock().await?, {
 
                 // Remove old cameras.
+                // TODO: Eventually also remove cameras if we haven't been able to connect to them for some period of time.
                 if resolver.disconnect_missing_cameras() {
                     state.cameras.retain(|old_camera_id, old_entry| {
                         if !current_cameras.contains_key(old_camera_id) {
@@ -910,6 +1028,7 @@ impl MocapManagerInner {
             for (camera_id, endpoint) in new_cameras {
 
                 let conn = resolver.connect(&endpoint).await?;
+                let supervisor_stub = resolver.connect_to_supervisor(&endpoint).await?;
 
                 new_camera_entries.push((camera_id, CameraEntry {
                     endpoint,
@@ -918,8 +1037,9 @@ impl MocapManagerInner {
                     ptp_stub: conn.ptp_stub,
                     camera_stub: conn.camera_stub,
                     ptp_leader: false,
+                    supervisor_stub: Some(supervisor_stub),
                     status: None,
-                    camera_config_epoch: 0,
+                    pending_save_intrinsics: None,
 
                     // NOTE: We only create this after the entry is added to the state
                     // to avoid race conditions.
@@ -934,7 +1054,8 @@ impl MocapManagerInner {
                         shared.clone(),
                         camera_id,
                         entry.ptp_stub.clone(),
-                        entry.camera_stub.clone()
+                        entry.camera_stub.clone(),
+                        entry.supervisor_stub.clone(),
                     )));
 
                     state.cameras.insert(camera_id, entry);
@@ -1014,7 +1135,7 @@ impl MocapManagerInner {
             }
 
             if time_elapsed > Duration::from_millis(5) {
-                eprintln!("Took {:?} to gather all camera results", time_elapsed);
+                log_every_sec!("Took {:?} to gather all camera results", time_elapsed);
             }
 
             let frame = state.frames.pop_front().unwrap();
@@ -1044,12 +1165,13 @@ impl MocapManagerInner {
         shared: Arc<Shared>,
         camera_id: u64,
         ptp_stub: Arc<TimeSyncStub>,
-        camera_stub: Arc<CameraStub >
+        camera_stub: Arc<CameraStub>,
+        supervisor_stub: Option<Arc<SupervisorStub>>
     ) {
 
         loop {
             let mut bundle = TaskResultBundle::new();
-            bundle.add("Status", Self::camera_status_monitor(shared.clone(), camera_id, ptp_stub.clone(), camera_stub.clone()));
+            bundle.add("Status", Self::camera_status_monitor(shared.clone(), camera_id, ptp_stub.clone(), camera_stub.clone(), supervisor_stub.clone()));
             bundle.add("ReadBlobs", Self::camera_read_blobs_thread(shared.clone(), camera_id, camera_stub.clone()));
 
             let res = bundle.join().await;
@@ -1064,11 +1186,14 @@ impl MocapManagerInner {
     /// Per-camera thread which has two jobs:
     /// - Checks the status of the PTP and camera code.
     /// - Configures the camera once PTP is syncronized.
+    ///
+    /// TODO: This will need RPC timeouts.
     async fn camera_status_monitor(
         shared: Arc<Shared>,
         camera_id: u64,
         ptp_stub: Arc<TimeSyncStub>,
-        camera_stub: Arc<CameraStub >
+        camera_stub: Arc<CameraStub>,
+        supervisor_stub: Option<Arc<SupervisorStub>>
     ) -> Result<()> {
 
         // TODO: Seem to be possible for the status page to tell us there are multiple leaders
@@ -1088,7 +1213,7 @@ impl MocapManagerInner {
             if *ptp_status.config() != intended_ptp_config {
                 // eprintln!("Configuring PTP for camera...");
 
-                if intended_ptp_config.role() == TimeSyncRole::LEADER {
+                if intended_ptp_config.has_leader() {
                     // Ideally the leader is configured slightly after the followers to ensure the followers don't
                     // complain about not being configured yet when a leader sync occurs.
                     executor::sleep(Duration::from_millis(10)).await?;
@@ -1108,27 +1233,13 @@ impl MocapManagerInner {
             // TODO: Only configure once PTP is well synced.
             // TODO: Make this check smarter.
 
-            let mut last_configured_epoch = lock!(state <= shared.state.lock().await?, {
-                let entry = match state.cameras.get_mut(&camera_id) {
-                    Some(v) => v,
-                    None => return 0
-                };
-
-                entry.camera_config_epoch
-            });
-
-            let next_config = lock!(config_state <= shared.camera_config_state.lock().await?, {
-                if config_state.camera_config_epoch == last_configured_epoch {
-                    return None;
-                }
+            let (intended_camera_config, intended_per_camera) = lock!(config_state <= shared.camera_config_state.lock().await?, {
                 let (config, is_per_camera) = Self::get_camera_config(camera_id, &config_state);
-                Some((config, is_per_camera, config_state.camera_config_epoch))
+                (config, is_per_camera)
             });
 
-            
-            if let Some((config, is_per_camera, epoch)) = next_config {
-                camera_stub.Configure(&request_context, &config).await.result?;
-                last_configured_epoch = epoch;
+            if status.config().epoch() != intended_camera_config.epoch() {
+                camera_stub.Configure(&request_context, &intended_camera_config).await.result?;
 
                 status = {
                     let req = StatusRequest::default();
@@ -1138,15 +1249,22 @@ impl MocapManagerInner {
                 // Pull any merge conflicts that were adjusted by the camera into our local copy of the config.
                 // (the hope is that all cameras behave the same way)
                 lock!(config_state <= shared.camera_config_state.lock().await?, {
-                    if last_configured_epoch == config_state.camera_config_epoch {
-                        if is_per_camera {
+                    if status.config().epoch() == config_state.camera_config_epoch {
+                        if intended_per_camera {
                             config_state.single_camera_override = Some((camera_id, status.config().clone()));
                         } else {
                             config_state.camera_config = status.config().clone();
                         }
+
+                        config_state.configured = true;
+                    } else {
+                        eprintln!("Status returned different config epoch")
                     }
                 });
             }
+
+
+            let mut pending_save_intrinsics = None;
 
             lock!(state <= shared.state.lock().await?, {
                 let entry = match state.cameras.get_mut(&camera_id) {
@@ -1154,23 +1272,129 @@ impl MocapManagerInner {
                     None => return
                 };
 
-                entry.camera_config_epoch = last_configured_epoch;
+                // TODO: Ideally we keep it in place so that we don't allow new updates to restart until we are fully done the old one
+                pending_save_intrinsics = entry.pending_save_intrinsics.take();
 
                 // TODO: Setting this is now generally sufficient for knowing if it is in sync since
                 // future changes to the config also need to be accounted for.
                 // 
                 entry.status = Some(CameraStatus {
-                    status,
+                    status: status.clone(),
                     ptp_status,
                     check_time: now
                 });
             });
 
+            if let Some(sender) = pending_save_intrinsics {
+                sender.send(Self::store_factory_intrinsics(&shared, camera_id, &status, supervisor_stub.clone()).await);
+            }
 
             let res = executor::timeout(
                 Duration::from_secs(1),
-                Self::wait_for_new_config_epoch(&shared, last_configured_epoch)
+                Self::wait_for_new_config_epoch(&shared, intended_camera_config.epoch())
             ).await;
+        }
+    }
+
+    async fn store_factory_intrinsics(
+        shared: &Shared,
+        camera_id: u64,
+        status: &MocapCameraStatus,
+        supervisor_stub: Option<Arc<SupervisorStub>>
+    ) -> Result<()> {
+        let mut hardware_config = status.hardware_config().clone();
+
+        let config = shared.config.read().await?;
+
+        let camera_config = config.per_camera().iter()
+            .find(|c| c.camera_id() == camera_id)
+            .ok_or_else(|| err_msg("Camera has no existing config"))?;
+
+        if !camera_config.has_intrinsics() {
+            return Err(err_msg("Camera has no intriniscs yet"));
+        }
+
+        if hardware_config.factory_intrinsics() == camera_config.intrinsics() {
+            return Err(err_msg("Factory intrinsics already match camera's active config"));
+        }
+
+        hardware_config.set_factory_intrinsics(camera_config.intrinsics().clone());
+
+        drop(config);
+
+        let hardware_config_payload = hardware_config.serialize()?;
+
+        let supervisor_stub = supervisor_stub.clone()
+            .ok_or_else(|| err_msg("No supervisor connection for camera"))?;
+
+        let mut updater = UpdateClient::create(&supervisor_stub).await?;
+
+        updater.start_update().await?;
+
+        updater.send_payload(&hardware_config_payload).await?;
+
+        updater.write_file("/boot/firmware/camera_hardware.pb").await?;
+
+        updater.commit_update().await?;
+
+        // We need to restart for the camera to notice the new hardware config.
+        // NOTE: this will probably return an error since we are killing the software.
+        let _ = restart_camera(&supervisor_stub).await;
+
+        Ok(())
+    }
+
+    async fn intrinsics_loader_thread(shared: Arc<Shared>) -> Result<()> {
+        loop {
+            {
+                let lock = shared.config_writer_lock.lock().await?;
+
+                let mut cameras_with_intrinsics = HashSet::<u64, FastHasherBuilder>::default();
+                {
+                    let config = shared.config.read().await?;
+                    for c in config.per_camera() {
+                        if c.has_intrinsics() {
+                            cameras_with_intrinsics.insert(c.camera_id());
+                        }
+                    }
+                }
+
+                let mut patch = MocapManagerConfig::default();
+
+                lock!(state <= shared.state.lock().await?, {
+
+                    for (camera_id, entry) in &state.cameras {
+                        if cameras_with_intrinsics.contains(&camera_id) {
+                            continue;
+                        }
+
+                        let status = match &entry.status {
+                            Some(v) => v,
+                            None => continue
+                        };
+
+                        if !status.status.hardware_config().has_factory_intrinsics() {
+                            continue;
+                        }
+
+                        println!("Loading intrinics for camera: {}", entity_id_to_string(*camera_id).unwrap());
+
+                        let cam = patch.new_per_camera();
+                        cam.set_camera_id(*camera_id);
+                        cam.set_intrinsics(status.status.hardware_config().factory_intrinsics().clone());
+                    }
+                });
+
+
+                if !patch.per_camera().is_empty() {
+                    Self::apply_config_patch_inner(&shared, &patch).await?;
+                }
+
+                drop(lock);
+            }
+
+            // TODO: Make it react faster to status updates from cameras. 
+            executor::sleep(Duration::from_secs(1)).await?;
         }
     }
 
@@ -1193,27 +1417,33 @@ impl MocapManagerInner {
             let entry = state.cameras.get(&camera_id)
                 .ok_or_else(|| err_msg("Missing camera"))?;
 
-            let mut ptp_config = ptp_core::default_config();
+            let mut ptp_config = TimeSyncConfig::default();
 
-            if !entry.ptp_leader {
-                ptp_config.set_role(TimeSyncRole::FOLLOWER);
-                return Ok(ptp_config);
-            }
+            let template = ptp_core::default_config_template();
 
-            ptp_config.set_role(TimeSyncRole::LEADER);
-                
-            for (follower_camera_id, entry) in &state.cameras {
-                if *follower_camera_id == camera_id {
-                    continue;
+            if entry.ptp_leader {
+                ptp_config.set_leader(template.leader().clone());
+
+                for (follower_camera_id, entry) in &state.cameras {
+                    if *follower_camera_id == camera_id {
+                        continue;
+                    }
+
+                    if !config.camera_enabled(*follower_camera_id) {
+                        continue;
+                    }
+
+                    let proto = ptp_config.leader_mut().new_followers();
+                    proto.set_rpc_addr(entry.rpc_addr.clone());
+                    proto.set_ptp_addr(entry.ptp_addr.clone());
                 }
 
-                if !config.camera_enabled(*follower_camera_id) {
-                    continue;
-                }
 
-                let proto = ptp_config.leader_mut().new_followers();
-                proto.set_rpc_addr(entry.rpc_addr.clone());
-                proto.set_ptp_addr(entry.ptp_addr.clone());
+                ptp_config.set_basic_client(template.basic_client().clone());
+                ptp_config.basic_client_mut().set_server_addr(&state.time_server_addr);
+
+            } else {
+                ptp_config.set_follower(template.follower().clone());
             }
 
             Ok(ptp_config)
@@ -1228,6 +1458,8 @@ impl MocapManagerInner {
                 (config_state.camera_config.clone(), false)
             }
         };
+
+        config.set_epoch(config_state.camera_config_epoch);
 
         let leds_on = config.leds_on();
 
@@ -1264,7 +1496,7 @@ impl MocapManagerInner {
             let rx_time = Instant::now();
 
             if res.cameras().len() != 1 {
-                eprintln!("Bad blobs format");
+                log_every_sec!("Bad blobs format");
                 continue;
             }
 
@@ -1292,13 +1524,13 @@ impl MocapManagerInner {
                     let frame = &mut state.frames[i];
 
                     if res.frame_timestamp() < frame.timestamp {
-                        eprintln!("Rejecting stale timestamp for new frame");
+                        log_every_sec!("Rejecting stale timestamp for new frame");
                         return;
                     }
                     
                     if res.frame_timestamp() == frame.timestamp {
                         if frame.results.contains_key(&camera_id) {
-                            eprintln!("Duplicate blob data for frame");
+                            log_every_sec!("Duplicate blob data for frame");
                             return;
                         }
 
@@ -1314,7 +1546,7 @@ impl MocapManagerInner {
                 }
 
                 if state.frame_timestamp_waterline >= res.frame_timestamp() {
-                    eprintln!("Rejecting stale timestamp for new frame (2)");
+                    log_every_sec!("Rejecting stale timestamp for new frame (2)");
                     return;
                 }
 

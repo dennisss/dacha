@@ -28,7 +28,8 @@ struct Args {
 
 define_arg_command!(Command {
     BuildCommand = "build",
-    UpdateCommand = "update"
+    UpdateCommand = "update",
+    BackupCommand = "backup"
 });
 
 

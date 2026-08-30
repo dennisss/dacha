@@ -29,14 +29,6 @@ impl UpdateCommand {
         
         let artifact_path = project_dir().join(&component.artifact);
 
-        let deb = match self.component.as_str() {
-            "camera" => "dist/pkg/vision/mocap/mocap-camera.deb",
-            "supervisor" => "dist/pkg/vision/mocap/mocap-supervisor.deb",
-            "kernel" => "dist/pkg/rpi/linux-kernel-dacha-rpi-arm64.deb",
-            "ar0234" => "dist/pkg/rpi/ar0234-driver-rpi-arm64.deb",
-            _ => return Err(err_msg("Unknown component"))
-        };
-
         let mut resolver = CameraResolver::create().await?;
         let cams = resolver.resolve().await?;
 
@@ -66,25 +58,12 @@ impl UpdateCommand {
     async fn perform_deb_update(resolver: &CameraResolver, endpoint: &str, deb_path: &LocalPath) -> Result<()> {
         let stub = resolver.connect_to_supervisor(&endpoint).await?;
 
-        let (mut req_stream, res_stream) = stub.Update(&rpc::ClientRequestContext::default()).await;
-        let mut client = UpdateClient {
-            req_stream,
-            res_stream
-        };
+        let mut client = UpdateClient::create(&stub).await?;
 
-        {
-            let mut req = UpdateRequest::default();
-            req.start_update_mut();
-            client.send(&req).await?;
-        }
+        client.start_update().await?;
 
         let data = file::read(deb_path).await?;
-
-        for chunk in data.chunks(8192) {
-            let mut req = UpdateRequest::default();
-            req.set_payload_chunk(chunk);
-            client.send(&req).await?;
-        }
+        client.send_payload(&data).await?;
 
         {
             let mut req = UpdateRequest::default();
@@ -94,12 +73,7 @@ impl UpdateCommand {
 
         println!("Commiting...");
 
-
-        {
-            let mut req = UpdateRequest::default();
-            req.commit_update_mut();
-            client.send(&req).await?;
-        }
+        client.commit_update().await?;
 
         println!("=> Done!");
 
@@ -126,28 +100,4 @@ impl UpdateCommand {
     }
 }
 
-struct UpdateClient {
-    req_stream: rpc::ClientStreamingRequest<UpdateRequest>,
-    res_stream: rpc::ClientStreamingResponse<UpdateResponse>,
-}
 
-impl UpdateClient {
-
-    pub async fn send(&mut self, req: &UpdateRequest) -> Result<()> {
-
-        if !self.req_stream.send(req).await {
-            self.req_stream.close().await;
-        }
-
-        if let Some(res) = self.res_stream.recv().await {
-            // println!("Got it: {:?}", res);
-        } else {
-            self.res_stream.finish().await?;
-
-            return Err(err_msg("Stream ended without an error"));
-        }
-
-        Ok(())
-    }
-
-}

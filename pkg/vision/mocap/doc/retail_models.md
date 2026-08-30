@@ -21,7 +21,7 @@ The following items are included in purchases:
         - <0.5% TV distortion
         - FOV: ~72 x 49 degrees.
     - Board Revisions
-        - Compute R9 or R10
+        - Compute R10
         - LED R6
         - AR0234 R2 
     - Range: > 5 meters

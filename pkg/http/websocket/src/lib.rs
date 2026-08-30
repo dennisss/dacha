@@ -79,7 +79,6 @@ impl WebSocket {
 
         loop {
             let n = reader.read(&mut buffer[buffer_len..]).await?;
-            println!("READ: {}", n);
             if n == 0 {
                 break;
             }

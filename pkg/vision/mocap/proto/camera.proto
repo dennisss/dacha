@@ -39,6 +39,10 @@ enum ComputeModuleModel {
 service Camera {
     rpc Status (StatusRequest) returns (MocapCameraStatus);
 
+    // Re-configures the camera.
+    //
+    // Note that this will do internal validation/normalization so the config returned by
+    // 'Status' will be slightly different but derived from the given request.
     rpc Configure (MocapCameraConfigureRequest) returns (ConfigureResponse);
 
     // Receives the per-frame stream of detected circular blob data.
@@ -74,6 +78,11 @@ message MocapCameraConfigureRequest {
     // TODO: Move this to the manager config since it only applies to groups of cameras
     // and is not read by the individual camera nodes.
     bool leds_on = 9;
+
+    // Client specified revision of this config.
+    // This is set by the manager to track if a camera needs to be reconfigured
+    // (e.g. after being restarted).
+    uint64 epoch = 10;
 }
 
 message MJPEGEncoderConfig {

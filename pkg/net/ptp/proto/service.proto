@@ -17,11 +17,31 @@ service TimeSync {
 }
 
 message TimeSyncConfig {
-    TimeSyncRole role = 1;
-
+    // If present, then this node will propagate the time on its PTP clock to a
+    // set of followers.
     LeaderConfig leader = 2;
 
+    // If present, then this node will await packets from a leader and use that
+    // data to adjust its local PTP clock.
     FollowerConfig follower = 3;
+
+    // If present, then the local PTP clock will be adjusted by querying a 
+    BasicClientConfig basic_client = 4;
+
+    // Parameters to use for syncing the leaders clock to CLOCK_REALTIME.
+    TimeAdjustmentConfig realtime_clock_sync = 5;
+
+    reserved 1;
+}
+
+message BasicClientConfig {
+    string server_addr = 1;
+
+    float sync_interval_seconds = 2;
+
+    TimeAdjustmentConfig clock_sync = 3;
+
+    float max_network_rtt = 4;
 }
 
 message LeaderConfig {
@@ -35,8 +55,7 @@ message LeaderConfig {
 
     float sync_timeout_seconds = 4;
 
-    // Parameters to use for syncing the leaders clock to CLOCK_REALTIME.
-    TimeAdjustmentConfig realtime_clock_sync = 5;
+    reserved 5;
 }
 
 message FollowerConfig {
@@ -77,6 +96,10 @@ message TimeAdjustmentConfig {
     // and remote frequencies (else we may drift continously and require an offset reset at
     // some point)
     double max_correction_ppm = 5;
+
+    // If non-zero, sets a limit to how much the frequency of the clock can change in a single
+    // sync round.
+    double max_frequency_step_ppm = 6;
 }
 
 
@@ -88,6 +111,8 @@ message StatusResponse {
     TimeSyncConfig config = 1;
 
     FollowerStatus follower = 2;
+
+    FollowerStatus basic_client = 3;
     
 }
 
@@ -112,12 +137,6 @@ message ConfigureResponse {
 
 }
 
-enum TimeSyncRole {
-    UNKNOWN = 0;
-    FOLLOWER = 1;
-    LEADER = 2;
-}
-
 message TimeSyncPoint {
     bytes tx_id = 1;
 
@@ -130,4 +149,11 @@ message TimeSyncPoint {
 
 message SyncResponse {
 
+}
+
+
+message TimeSyncPacket {
+    bytes ping = 1;
+    fixed64 timestamp = 2;
+    bool is_reply = 3;
 }

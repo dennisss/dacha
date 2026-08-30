@@ -66,11 +66,22 @@ pub struct Icon {
     pub height: u32,
 }
 
+#[derive(Clone, Debug)]
+pub struct Cookie {
+    pub name: String,
+    pub value: String,
+    pub domain: String,
+    pub path: String,
+    pub http_only: bool,
+    pub secure: bool,
+}
+
 pub struct WebViewBuilder {
     pub title: String,
     pub width: u32,
     pub height: u32,
-    pub html: String,
+    pub html: Option<String>,
+    pub url: Option<String>,
     pub on_message: Option<MessageHandler>,
     pub on_request: Option<RequestHandler>,
     pub(crate) on_init: Option<InitHandler>,
@@ -81,6 +92,7 @@ pub struct WebViewBuilder {
     pub maximized: bool,
     pub user_data_dir: Option<String>,
     pub icon: Option<Icon>,
+    pub cookies: Vec<Cookie>,
 }
 
 impl WebViewBuilder {
@@ -91,7 +103,8 @@ impl WebViewBuilder {
             title: title.to_string(),
             width,
             height,
-            html: String::new(),
+            html: None,
+            url: None,
             on_message: None,
             on_request: None,
             on_init: None,
@@ -102,13 +115,21 @@ impl WebViewBuilder {
             maximized: false,
             user_data_dir: None,
             icon: None,
+            cookies: Vec::new(),
         }
     }
 
     /// Set the content of the WebView to load an HTML string directly.
-    /// The base URL is automatically set to `webview://localhost/`.
     pub fn load_html(mut self, html: &str) -> Self {
-        self.html = html.to_string();
+        self.html = Some(html.to_string());
+        self
+    }
+
+    /// Set the URL for the WebView to navigate to.
+    /// If `load_html` is also used, this sets the base URL for the HTML content.
+    /// If only `load_url` is used, the WebView will navigate to this URL natively.
+    pub fn load_url(mut self, url: &str) -> Self {
+        self.url = Some(url.to_string());
         self
     }
 
@@ -169,8 +190,21 @@ impl WebViewBuilder {
 
     /// Set the window icon (shows in the taskbar/dock and titlebar).
     /// The `rgba` vector should contain raw RGBA pixel data (4 bytes per pixel).
-    pub fn icon(mut self, icon: Icon) -> Self {
-        self.icon = Some(icon);
+    pub fn with_icon(mut self, rgba: Vec<u8>, width: u32, height: u32) -> Self {
+        self.icon = Some(Icon { rgba, width, height });
+        self
+    }
+
+    /// Add a cookie to be injected into the webview before page load.
+    pub fn with_cookie(mut self, name: &str, value: &str, domain: &str, path: &str, http_only: bool, secure: bool) -> Self {
+        self.cookies.push(Cookie {
+            name: name.to_string(),
+            value: value.to_string(),
+            domain: domain.to_string(),
+            path: path.to_string(),
+            http_only,
+            secure,
+        });
         self
     }
 

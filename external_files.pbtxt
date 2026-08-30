@@ -11,18 +11,18 @@ files: [
     },
     {
         path: "dist/pkg/rpi/linux-kernel-dacha-rpi-arm64.deb"
-        size: 40620382
-        sha256_sum: "d006ea59bd4b36c9cde841c6ef3f66cb20c0eb0abd228d7ab98c7c5fe7219c8f"
+        size: 40622018
+        sha256_sum: "014dc3532846353e6411551ec5a5cdc7897fc8b7d40dd1f79d5bf2ccc9ab36b7"
     },
     {
         path: "dist/pkg/vision/mocap/mocap-camera.deb"
-        size: 9385962
-        sha256_sum: "b79124c759ddee9f09dd05766f81144d034759f8d47eae8dcacda4b937ef717f"
+        size: 9447234
+        sha256_sum: "27f7aa5e0d8c93b50e4c4e098741bf973700fb5fb85ccb6d7570531cba2c6475"
     },
     {
         path: "dist/pkg/vision/mocap/mocap-supervisor.deb"
-        size: 3760842
-        sha256_sum: "df7c4e9af04fa0fca8b0f29bf802bd6252788a72563e5278ea622b67c805bdeb"
+        size: 3779254
+        sha256_sum: "3f7ce90592f7974322f7ef333b6cff29060f3631631a01f57d04b6ad3b0a0d98"
     },
     {
         path: "dist/pkg/vision/mocap/pps_divider.bin"
@@ -36,8 +36,8 @@ files: [
     },
     {
         path: "dist/third_party/pi-gen/Daspbian-mocap-lite.img.gz"
-        size: 140307529
-        sha256_sum: "bb09d4ff567ba78c77de5bdd0f9ebf15609b83af18d907bb67d4a930cb71ff22"
+        size: 140387862
+        sha256_sum: "013867a4c80048ea2c176dbf002be565af45f69dcd43c6271a07cbbd443fcdfd"
     },
     {
         path: "doc/asus_ssd_fan/images/image.jpg"

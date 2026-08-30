@@ -12,9 +12,11 @@ pub trait Accelerometer: 'static + Send + Sync {
 pub async fn create_accelerometer(mut i2c: I2CHostDevice) -> Result<Box<dyn Accelerometer>> {
     // NOTE: The chip id register address is the same across the devices we
     // support. 
-    i2c.write(&[LIS2DW12::REG_WHO_AM_I]).await?;
+    i2c.write(&[LIS2DW12::REG_WHO_AM_I]).await
+        .map_err(|e| format_err!("While writing who_am_i: {}", e))?;
     let mut who_am_i = [0u8; 1];
-    i2c.read(&mut who_am_i).await?;
+    i2c.read(&mut who_am_i).await
+        .map_err(|e| format_err!("While reading who_am_i: {}", e))?;
 
     match who_am_i[0] {
         LIS2DW12::EXPECTED_WHO_AM_I => {

@@ -1,5 +1,6 @@
 import { encode_utf8, decode_utf8, encode_be_u32, decode_be_u32, decode_header_block } from "pkg/web/lib/encoding";
 import { ChannelWebView } from "./rpc/webview";
+import { ChannelWebSocket } from "./rpc/websocket";
 
 const STATUS_CODES = {
     0: 'OK',
@@ -162,7 +163,22 @@ export class Channel {
     call_streaming(service_name: String, method_name: String, request: any, options: RequestOptions = {}): StreamingResponse {
         let state = new StreamingResponseState();
 
-        if (window.location.protocol == 'webview:') {
+        if (window.vars && window.vars.use_websocket_rpc) {
+            // TODO: Dedup this.
+            let abort_signals = this._abort_signals.slice();
+            if (options.abort_signal) {
+                abort_signals.push(options.abort_signal);
+            }
+
+            try {
+                ChannelWebSocket.global().call_streaming(
+                    service_name, method_name, request, state,
+                    AbortSignal.any(abort_signals)
+                );
+            } catch (e) {
+                state.status = new Status(-1, 'Failed to get response: ' + e);
+            }
+        } else if (window.location.protocol == 'webview:') {
             // TODO: Dedup this.
             let abort_signals = this._abort_signals.slice();
             if (options.abort_signal) {

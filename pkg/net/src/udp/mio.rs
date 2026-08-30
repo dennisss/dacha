@@ -116,6 +116,13 @@ impl UdpSocket {
         ))
         .remap_std_error::<NetworkError, _>(|| "UDPSocket::join_multicast_v4 failed".into())
     }
+
+    pub fn local_addr(&self) -> Result<SocketAddr> {
+        let addr = self.inner.run(|sock| sock.local_addr())
+            .remap_std_error::<NetworkError, _>(|| "UDPSocket::local_addr failed".into())
+        
+        Ok(addr.into())
+    }
 }
 
 

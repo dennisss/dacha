@@ -863,9 +863,8 @@ impl DirectClientRunner {
                     let request_entry = state.unassigned_requests.remove(request_i).unwrap();
                     self.start_requesting(request_entry, connection_id, state)
                         .await;
+                    continue;
                 }
-
-                continue;
             }
 
             /*

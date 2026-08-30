@@ -78,7 +78,7 @@ cargo run --bin mocap_deb -- build camera
 
 **Build Image**
 
-Then follow the image building instructions [here](pkg/rpi/index.md#building). The main change should be that the `build_image.sh` command should change to the following:
+Then follow the image building instructions [here](/pkg/rpi/index.md#building). The main change should be that the `build_image.sh` command should change to the following:
 
 ```bash
 ./pkg/rpi/scripts/build_image.sh mocap
@@ -104,7 +104,7 @@ cargo build --bin mocap_imager --release
 sudo target/release/mocap_imager \
     --image=dist/third_party/pi-gen/Daspbian-mocap-lite.img.gz \
     --disk=mass-storage-gadget \
-    --hardware_config="compute_module: PI_CM4_LITE compute_board_revision: 9"
+    --hardware_config="compute_module: PI_CM4_LITE compute_board_revision: 10"
 ```
 
 ## Startup

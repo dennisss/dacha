@@ -93,7 +93,8 @@ impl PPSDividerClient {
         // NOTE: This is intentionally fairly slow since the MCU gets interrupted on every single byte
         // so we don't want to disrupt the timing critical pulse work or get serial overruns if we
         // are currently running the pulse logic.
-        let mut serial = SerialPort::open(&config.mcu_serial_device(), 115_200)?;
+        let mut serial = SerialPort::open(&config.mcu_serial_device(), 115_200)
+            .map_err(|e| format_err!("While opening serial port: {}", e))?;
 
         let (reader, writer) = serial.split();
 

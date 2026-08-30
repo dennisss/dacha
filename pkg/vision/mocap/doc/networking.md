@@ -82,3 +82,4 @@ The current assumption is that the host machine does not have PTP capable hardwa
 - Host machine chooses a camera to act as the PTP leader and performs a 'pseudo-NTP' sync with it using software timestamps.
 - 'Leader' Camera uses PTP to sync to all other cameras.
 
+Note: All time sync round trips are initiated by the leader camera so that they can be guaranteed to be non-overlapping for best performance.

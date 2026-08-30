@@ -132,6 +132,15 @@ impl UdpSocket {
     pub unsafe fn raw(&self) -> &OpenFileDescriptor {
         &self.inner.fd
     }
+
+    pub fn local_addr(&self) -> Result<SocketAddr> {
+        let addr = unsafe {
+            sys::getsockname(&self.inner.fd)?
+                .ok_or_else(|| err_msg("local_addr has unsupported address type"))?
+        };
+
+        SocketAddr::try_from(addr)
+    }
 }
 
 pub struct MessageSocket {

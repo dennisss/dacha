@@ -145,13 +145,16 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
         }
 
         if (camera.synced) {
-            let ptp_role = camera.ptp_status.config.role;
-            if (ptp_role == 'LEADER') {
-                ptp_age = 0;
-                ptp_error = 'Leader';
+            if (camera.ptp_status.basic_client && camera.ptp_status.basic_client.got_sync) {
+                // Leader
+                ptp_age = (camera.last_sync_age || 0) + (camera.ptp_status.basic_client.last_sync_age || 0);
+                ptp_error = (
+                    <b style={{ fontStyle: 'italic' }}>
+                        {format_small_time(camera.ptp_status.basic_client.last_leader_error || 0)}
+                    </b>
+                );
             } else if (camera.ptp_status.follower && camera.ptp_status.follower.got_sync) {
-                // TODO: This age seems to be wrong as we don't seem to not failing chains of events.
-                ptp_age = (camera.last_sync_age || 0) + (camera.ptp_status.last_sync_age || 0);
+                ptp_age = (camera.last_sync_age || 0) + (camera.ptp_status.follower.last_sync_age || 0);
                 ptp_error = format_small_time(camera.ptp_status.follower.last_leader_error || 0);
             }
 
@@ -588,6 +591,10 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
             }
         })
 
+        let have_good_factory = (
+            active_camera.camera_status && active_camera.camera_status.hardware_config && JSON.stringify(active_camera.camera_status.hardware_config.factory_intrinsics) == JSON.stringify(config.intrinsics)
+        );
+
         return (
             <Card header="Intrinsics" style={{ marginBottom: 10 }}>
                 <div>
@@ -604,6 +611,13 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
                         }, done)
                     }}>
                         Start Checkerboard Calibration
+                    </Button>
+                    <Button style={{ marginLeft: 10 }} preset="outline-primary" disabled={!config.intrinsics || have_good_factory} onClick={(done) => {
+                        this._execute({
+                            save_factory_intrinsics: { camera_id: active_camera.id }
+                        }, done)
+                    }}>
+                        {have_good_factory ? 'Intrinsics match factory calibration' : 'Store Factory Calibration'}
                     </Button>
 
                 </CardBody>

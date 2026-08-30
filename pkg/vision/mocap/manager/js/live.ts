@@ -1,5 +1,5 @@
 import { Channel } from "pkg/web/lib/rpc";
-import { WebSocketConnection } from "./websocket";
+import { WebSocketConnection } from "pkg/web/lib/websocket";
 
 
 // This continously pulls image frames for a single camera until it is aborted.

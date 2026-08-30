@@ -4,9 +4,11 @@ use std::collections::HashMap;
 use common::errors::*;
 use common::hash::FastHasherBuilder;
 use net::route::NetworkInterfaceRoute;
+use net::ip::SocketAddr;
 use cluster_client::id::{entity_id_to_string, entity_id_from_string};
-use mocap_proto::mocap::{CameraStub , SupervisorStub};
+use mocap_proto::mocap::*;
 use ptp_proto::ptp::TimeSyncStub;
+use ptp_core::BasicTimeNode;
 
 /*
 On linux, for testing you can run the following to remove the conneciton:
@@ -61,6 +63,11 @@ impl CameraResolver {
 
     pub fn iface_description(&self) -> String {
         self.iface_description.clone()
+    }
+
+    pub async fn create_time_server(&self) -> Result<BasicTimeNode> {
+        let bind_addr = SocketAddr::new(self.route.addr.clone(), 0); // random port
+        BasicTimeNode::create(bind_addr, &self.route.name).await
     }
 
     pub fn disconnect_missing_cameras(&self) -> bool {
@@ -270,5 +277,90 @@ impl CameraResolver {
 
         Err(err_msg("Failed to find an appropriate ethernet interface"))
     }
+}
 
+
+pub struct UpdateClient {
+    req_stream: rpc::ClientStreamingRequest<UpdateRequest>,
+    res_stream: rpc::ClientStreamingResponse<UpdateResponse>,
+}
+
+impl UpdateClient {
+
+    pub async fn create(stub: &SupervisorStub) -> Result<Self> {
+        let ( req_stream, res_stream) = stub.Update(&rpc::ClientRequestContext::default()).await;
+        Ok(Self {
+            req_stream,
+            res_stream
+        })
+    }
+
+    pub async fn send(&mut self, req: &UpdateRequest) -> Result<()> {
+        if !self.req_stream.send(req).await {
+            self.req_stream.close().await;
+        }
+
+        if let Some(res) = self.res_stream.recv().await {
+            // println!("Got it: {:?}", res);
+        } else {
+            self.res_stream.finish().await?;
+
+            return Err(err_msg("Stream ended without an error"));
+        }
+
+        Ok(())
+    }
+
+    pub async fn start_update(&mut self) -> Result<()> {
+        let mut req = UpdateRequest::default();
+        req.start_update_mut();
+        self.send(&req).await
+    }
+
+    pub async fn commit_update(&mut self) -> Result<()> {
+        let mut req = UpdateRequest::default();
+        req.commit_update_mut();
+        self.send(&req).await
+    }
+
+    pub async fn send_payload(&mut self, data: &[u8]) -> Result<()> {
+        for chunk in data.chunks(8192) {
+            let mut req = UpdateRequest::default();
+            req.set_payload_chunk(chunk);
+            self.send(&req).await?;
+        }
+
+        Ok(())
+    }
+
+    pub async fn write_file(&mut self, path: &str) -> Result<()> {
+        let mut req = UpdateRequest::default();
+        req.write_file_mut().set_path(path);
+        self.send(&req).await
+    }
+}
+
+pub async fn restart_camera(stub: &SupervisorStub) -> Result<()> {
+    let mut req = SupervisorRunRequest::default();
+    req.set_command("reboot");
+    let res = stub.Run(&rpc::ClientRequestContext::default(), &req).await.result?;
+    println!("Restart response: {:?}", res);
+    Ok(())
+}
+
+pub async fn read_camera_file(stub: &SupervisorStub, path: &str) -> Result<Vec<u8>> {
+    let mut req = SupervisorReadFileRequest::default();
+    req.set_path(path);
+
+    let mut res = stub.ReadFile(&rpc::ClientRequestContext::default(), &req).await;
+
+    let mut out = vec![];
+
+    while let Some(chunk) = res.recv().await {
+        out.extend_from_slice(chunk.data());
+    }
+
+    res.finish().await?;
+
+    Ok(out)
 }

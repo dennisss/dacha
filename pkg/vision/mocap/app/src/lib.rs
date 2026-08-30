@@ -11,3 +11,4 @@ pub use inst::*;
 mod protocol;
 mod config;
 mod http_server;
+mod rpc_server;

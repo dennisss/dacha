@@ -73,6 +73,15 @@ impl Service {
             return Ok(bad_request());
         }
 
+        if let http::uri::Host::IP(_) = req.head.uri.authority.as_ref().unwrap().host {
+            eprintln!(
+                "Requesting IP: {:?} {}",
+                req.head.method,
+                req.head.uri.to_string()?
+            );
+            return Ok(bad_request());
+        }
+
         // TODO: Sometimes we get failures so ideally auto-retry.
         // "E: Failed to fetch http://archive.raspberrypi.com/debian/pool/main/libp/libpisp/libpisp1_1.1.0-1_arm64.deb  500  Internal Server Error [IP: 172.17.0.1 9000]"
         let request = http::RequestBuilder::new()

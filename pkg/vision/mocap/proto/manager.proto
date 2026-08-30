@@ -295,7 +295,13 @@ message ExecuteRequest {
         bool start_aux_rpc_server = 22;
 
         bool stop_aux_rpc_server = 23;
+
+        SaveFactoryIntrinsicsCommand save_factory_intrinsics = 24;
     }
+}
+
+message SaveFactoryIntrinsicsCommand {
+    fixed64 camera_id = 1;
 }
 
 message SetCameraEnable {

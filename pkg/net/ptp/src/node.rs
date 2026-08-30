@@ -13,6 +13,7 @@ use cluster_client::{ClusterMetaClient, ServiceResolver};
 use protobuf::Message;
 use http::Resolver;
 use executor::sync::AsyncVariable;
+use ptp_core::BasicTimeNode;
 
 use crate::signed_duration::*;
 use crate::socket::*;
@@ -33,6 +34,7 @@ struct Shared {
     // meta_client: Arc<ClusterMetaClient>,
     ptp_device: Arc<PTPDevice>,
     ptp_socket: TimestampedUdpSocket,
+    basic_node: Arc<BasicTimeNode>,
     state: AsyncVariable<State>,
 }
 
@@ -41,6 +43,8 @@ struct State {
     config: TimeSyncConfig,
 
     follower_state: Option<FollowerState>,
+
+    basic_client_state: Option<FollowerState>,
 
     // TODO: Probably keep one record per peer address so that we gracefully support leadership changes.
     last_rx: Option<ReceivedPacket>,
@@ -71,25 +75,24 @@ struct SentPacket {
     tx_time: u64,
 }
 
-enum BackgroundState {
-    None,
-    Leader(LeaderState)
-}
-
 #[derive(Default)]
 struct LeaderState {
     last_round: Option<Instant>,
     
     // The key is the serialized protos.
     followers: HashMap<Vec<u8>, LeaderPeer>,
+}
 
-    pi_filter: PIFilterState
+#[derive(Default)]
+struct BasicClientState {
+    last_round: Option<Instant>,
 }
 
 #[derive(Default)]
 struct PIFilterState {
     integral: f64,
     last_time: Option<Instant>,
+    last_output: f64
 }
 
 struct LeaderPeer {
@@ -101,24 +104,28 @@ struct LeaderPeer {
 }
 
 impl TimeSyncNode {
-    pub fn default_config() -> TimeSyncConfig {
-        ptp_core::default_config()
+    pub fn default_config_template() -> TimeSyncConfig {
+        ptp_core::default_config_template()
     }
 
     pub async fn create(
         // meta_client: Arc<ClusterMetaClient>,
         ptp_device: Arc<PTPDevice>,
-        ptp_socket: TimestampedUdpSocket
+        ptp_socket: TimestampedUdpSocket,
+        basic_node: Arc<BasicTimeNode>,
     ) -> Self {
 
         let shared = Arc::new(Shared {
             // meta_client,
             ptp_device,
             ptp_socket,
+            basic_node: basic_node.clone(),
             state: AsyncVariable::default()
         });
 
         let mut resources = ServiceResourceGroup::new("TimeSyncNode");
+
+        resources.register_dependency(basic_node.clone()).await;
 
         resources.spawn_interruptable(
             "TimeSyncNode::background_thread", Self::background_thread(shared.clone())
@@ -148,6 +155,18 @@ impl TimeSyncNode {
                 }
             }
 
+            // TODO: Dedup this with above.
+            if let Some(follower_state) = &state.basic_client_state {
+                let proto = out.basic_client_mut();
+                
+                if let Some(last_sync) = &follower_state.last_sync {
+                    proto.set_got_sync(true);
+                    proto.set_last_leader_error(last_sync.error);
+                    proto.set_last_leader_rtt(last_sync.rtt);
+                    proto.set_last_sync_age((Instant::now() - last_sync.time).as_secs_f64());
+                }
+            }
+
             Ok(out)
         })
     }
@@ -156,10 +175,16 @@ impl TimeSyncNode {
         lock!(state <= self.shared.state.lock().await?, {
             state.config = config.clone();
 
-            if config.role() == TimeSyncRole::FOLLOWER {
+            if config.has_follower() {
                 state.follower_state = Some(FollowerState::default());
             } else {
                 state.follower_state = None;
+            }
+
+            if config.has_basic_client() {
+                state.basic_client_state = Some(FollowerState::default());
+            } else {
+                state.basic_client_state = None;
             }
 
             Ok(())
@@ -363,6 +388,15 @@ impl TimeSyncNode {
         out *= 1_000_000.0; // scale to ppm.
 
         out = clamp_magnitude(out, config.max_correction_ppm());
+
+        if config.max_frequency_step_ppm() != 0.0 {
+            let max_step = config.max_frequency_step_ppm();
+            if (out - state.last_output).abs() > max_step {
+                out = (out - state.last_output).signum() * max_step + state.last_output;
+            }
+        }
+
+        state.last_output = out;
 
         // println!("=> freq: {:.2}ppm", out);
 
@@ -587,7 +621,7 @@ impl TimeSyncNode {
                     rx_time,
                 });
                 
-                if state.config.role() == TimeSyncRole::FOLLOWER {
+                if state.config.has_follower() {
                     let mut tx_id = vec![0u8; ID_SIZE];
                     crypto::random::global_rng().generate_bytes(&mut tx_id).await;
 

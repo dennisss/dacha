@@ -42,7 +42,7 @@ impl TimeSyncService for DummyTimeSyncNode {
             out.set_config(state.config.clone());
 
             // TODO: Simulate slow convergence based on time since last_configured.
-            if state.config.role() == TimeSyncRole::FOLLOWER {
+            if state.config.has_follower() {
                 let proto = out.follower_mut();
                 proto.set_got_sync(true);
                 proto.set_last_leader_error(0.001);

@@ -225,3 +225,11 @@ a.nostyle:visited {
 .selection-box.hidden {
     display: none !important;
 }
+
+/* Workaround for Bootstrap being too complicated to work on Webkit */
+.table>tbody>tr.table-active>td,
+.table>tbody>tr.table-active>th,
+.table-hover>tbody>tr:hover>td,
+.table-hover>tbody>tr:hover>th {
+    background-color: var(--bs-table-bg-state) !important;
+}

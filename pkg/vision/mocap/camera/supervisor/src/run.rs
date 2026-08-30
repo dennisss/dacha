@@ -7,13 +7,11 @@ use mocap_proto::mocap::*;
 pub fn run_command(
     req: &SupervisorRunRequest
 ) -> Result<SupervisorRunResponse> {
-    let output = Command::new("/bin/cat")
-        .arg("bash")
+    let output = Command::new("/bin/bash")
         .arg("-c")
         .arg(req.command())
         .output()?;
 
-      
     let mut res = SupervisorRunResponse::default();
     res.set_stdout(output.stdout);
     res.set_stderr(output.stderr);

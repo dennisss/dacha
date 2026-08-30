@@ -16,6 +16,8 @@ const SAMPLE_INTERVAL: Duration = Duration::from_secs(1);
 
 /// Background service that maintains a mapping from Linux's CLOCK_MONOTONIC to a
 /// PTP clock.
+///
+/// TODO: Make this smarter since the clocks may not be running at the same speed.
 pub struct MonotonicClockTimeSyncer {
     task: TaskResource,
     shared: Arc<Shared>
