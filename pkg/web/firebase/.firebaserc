@@ -1,0 +1,18 @@
+{
+  "projects": {
+    "default": "da-cha"
+  },
+  "targets": {
+    "da-cha": {
+      "hosting": {
+        "dacha-dev": [
+          "dacha-dev"
+        ],
+        "madebydennis-com": [
+          "madebydennis-com"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}
