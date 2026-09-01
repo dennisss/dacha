@@ -7,6 +7,7 @@ use std::borrow::Cow;
 use common::hash::FastHasherBuilder;
 use common::errors::*;
 
+use crate::error::*;
 use crate::maybe_project_dir;
 
 static STATE: LazyLock<Mutex<State>> = LazyLock::new(|| Mutex::default());
@@ -34,7 +35,10 @@ pub async fn read_asset(path: &str) -> Result<Cow<'static, [u8]>> {
 
     let state = STATE.lock().unwrap();
     let data = state.assets.get(path).map(|s| *s)
-        .ok_or_else(|| format_err!("Missing asset with path: {}", path))?;
+        .ok_or_else(|| Error::from(FileError::new(
+            FileErrorKind::NotFound,
+            &format!("Asset file does not exist: {}", path)
+        )))?;
     Ok(Cow::Borrowed(data))
 }
 

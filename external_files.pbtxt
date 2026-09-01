@@ -15,6 +15,11 @@ files: [
         sha256_sum: "014dc3532846353e6411551ec5a5cdc7897fc8b7d40dd1f79d5bf2ccc9ab36b7"
     },
     {
+        path: "dist/pkg/vision/mocap/app/mocap-linux-x64.tar.gz"
+        size: 13550360
+        sha256_sum: "6a562cd5051253fd0d4b1820bd8bd67aa0c771ee04d01e00f1c7e7fcf45d624a"
+    },
+    {
         path: "dist/pkg/vision/mocap/mocap-camera.deb"
         size: 9447234
         sha256_sum: "27f7aa5e0d8c93b50e4c4e098741bf973700fb5fb85ccb6d7570531cba2c6475"

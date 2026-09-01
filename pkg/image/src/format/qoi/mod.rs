@@ -35,8 +35,8 @@ impl QOIDecoder {
         // 1 = all channels linear
         let colorspace = parse_next!(input, be_u8);
 
-        if channels != 3 {
-            return Err(err_msg("Only RGB supported"));
+        if channels != 3 && channels != 4 {
+            return Err(err_msg("QOIDecoder: Only RGB(A) supported"));
         }
 
         let mut last_pixel = [0, 0, 0, 255u8];
@@ -116,7 +116,7 @@ impl QOIDecoder {
                 shape: vec![height, width, channels],
                 data: pixels,
             },
-            colorspace: Colorspace::RGB,
+            colorspace: if channels == 3 { Colorspace::RGB } else { Colorspace::RGBA },
         })
     }
 }

@@ -13,15 +13,13 @@ use std::fmt::Write;
 use common::bytes::Bytes;
 use common::errors::*;
 use http::{
-    static_file_handler::{StaticFileHandler, StaticFileHandlerOptions},
+    static_file_handler::{AssetFileHandler, StaticFileHandlerOptions},
     ServerHandler,
 };
 use parsing::ascii::AsciiString;
 
 /*
 We will provide a standard way for programs to register web pages.
-
-Provide a GRPC over websocket solution?
 
 Specifying files:
 - In the build system, the file must be explicitly linked via 'data' dependencies.
@@ -33,11 +31,12 @@ regexp!(HTML_TEMPLATE => "{{\\s*([a-zA-Z0-9_.-]+)\\s*}}");
 // TODO: Use this everywhere.
 const ASSETS_PATH_SUFFIX: &'static str = "/assets";
 
-pub fn assets_handler() -> StaticFileHandler {
+pub fn assets_handler() -> AssetFileHandler {
     let mut asset_options = StaticFileHandlerOptions::default();
     asset_options.trust_file_extension = true;
     asset_options.mount_path = ASSETS_PATH_SUFFIX.to_string();
-    StaticFileHandler::new_with_options(file::project_dir(), asset_options)
+    AssetFileHandler::new_with_options(asset_options)
+    // StaticFileHandler::new_with_options(file::project_dir(), asset_options)
 }
 
 /// Configuration for a single page to be

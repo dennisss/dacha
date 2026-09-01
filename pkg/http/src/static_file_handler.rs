@@ -147,11 +147,14 @@ impl ServerHandler for StaticFileHandler {
             // TODO: Generalize this. If a client is expected to immediately use a result,
             // we want to specify this, else, we want to allow downloading while preserving
             // the encoding.
-            if file_path.as_str().ends_with(".zz") {
+            if file_path.to_str().unwrap().ends_with(".zz") {
                 response = response.header(CONTENT_ENCODING, "deflate");
             }
 
             if let Some(ext) = file_path.extension() {
+                #[cfg(not(target_os = "linux"))]
+                let ext = ext.to_str().unwrap();
+
                 if let Some(typ) = self.extension_types.get(ext) {
                     response = response.header(CONTENT_TYPE, *typ);
                 }
@@ -189,6 +192,101 @@ impl ServerHandler for StaticFileHandler {
         response.build().unwrap()
     }
 }
+
+// TODO: Dedup this more with the StaticFileHandler.
+pub struct AssetFileHandler {
+    options: StaticFileHandlerOptions,
+
+    extension_types: HashMap<&'static str, &'static str, FastHasherBuilder>,
+}
+
+impl AssetFileHandler {
+    pub fn new() -> Self {
+        Self::new_with_options(StaticFileHandlerOptions::default())
+    }
+
+    pub fn new_with_options(
+        options: StaticFileHandlerOptions,
+    ) -> Self {
+        let mut extension_types = HashMap::default();
+        for typ in mime_types::MEDIA_TYPES_LIST {
+            for ext in typ.extensions {
+                // NOTE: We assume that 'ext' is in lowercase.
+                extension_types.insert(*ext, typ.types[0]);
+            }
+        }
+
+        Self {
+            options,
+            extension_types,
+        }
+    }
+}
+
+
+#[async_trait]
+impl ServerHandler for AssetFileHandler {
+    async fn handle_request<'a>(&self, request: Request, _: ServerRequestContext<'a>) -> Response {
+
+        let mut path = request.head.uri.path.as_str()
+            .strip_prefix(&self.options.mount_path).unwrap_or("");
+
+        if path.starts_with("/") {
+            path = path.strip_prefix("/").unwrap();
+        }
+
+        // TODO: Validate there are no '..' in the path
+
+        let data = match file::read_asset(&path).await {
+            Ok(m) => m,
+            Err(e) => {
+                if file::because_file_doesnt_exist(&e) {
+                    return ResponseBuilder::new()
+                        .status(status_code::NOT_FOUND)
+                        .build()
+                        .unwrap();
+                }
+
+                return ResponseBuilder::new()
+                    .status(status_code::INTERNAL_SERVER_ERROR)
+                    .build()
+                    .unwrap();
+            }
+        };
+
+        let mut response = ResponseBuilder::new()
+            .status(status_code::OK)
+            .header(ACCEPT_RANGES, "bytes");
+
+        if self.options.trust_file_extension {
+            let path = LocalPath::new(path);
+
+            // TODO: Lowercase the file extension.
+
+            // TODO: Generalize this. If a client is expected to immediately use a result,
+            // we want to specify this, else, we want to allow downloading while preserving
+            // the encoding.
+            if path.to_str().unwrap().ends_with(".zz") {
+                response = response.header(CONTENT_ENCODING, "deflate");
+            }
+
+            if let Some(ext) = path.extension() {
+                #[cfg(not(target_os = "linux"))]
+                let ext = ext.to_str().unwrap();
+
+                if let Some(typ) = self.extension_types.get(ext) {
+                    response = response.header(CONTENT_TYPE, *typ);
+                }
+            }
+        }
+
+        response = response.body(BodyFromData(data));
+
+        response.build().unwrap()
+    }
+}
+
+
 
 pub struct StaticFileBody {
     // NOTE: The file should already be seeked to the start of the range when the StaticFileBody

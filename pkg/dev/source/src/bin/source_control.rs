@@ -44,6 +44,8 @@ General workflow:
 
 // ".git/info/exclude" will contain the full lsit.
 
+#![feature(inherent_associated_types)]
+
 #[macro_use]
 extern crate macros;
 #[macro_use]
@@ -131,6 +133,9 @@ enum Command {
 
     #[arg(name = "license-check")]
     LicenseCheck(LicenseCheckCommand),
+
+    #[arg(name = "generate-files-json")]
+    GenerateFilesJson(GenerateFilesJsonCommand),
 }
 
 #[derive(Args)]
@@ -726,6 +731,60 @@ impl LicenseCheckCommand {
     }
 }
 
+#[derive(Parseable, Debug, Default)]
+struct FilesJson {
+    files: Vec<FileJson>
+}
+
+#[derive(Parseable, Debug)]
+struct FileJson {
+    path: String,
+    bucket_path: String,
+}
+
+#[derive(Args)]
+struct GenerateFilesJsonCommand {
+
+}
+
+impl GenerateFilesJsonCommand {
+    async fn run(self) -> Result<()> {
+        let mut external_files = load_external_files_proto().await?;
+
+        let mut out = FilesJson::default();
+
+        for file in external_files.files() {
+            out.files.push(FileJson {
+                path: file.path().into(),
+                bucket_path: format!("sha256/{}", file.sha256_sum())
+            });
+        }
+
+        let out_json = json::stringify(&out)?;
+
+        // Upload it
+        {
+            let data =
+                file::read_to_string("/home/dennis/.credentials/dacha-main-748d2acba112.json").await?;
+
+            let sa: Arc<GoogleServiceAccount> =
+                Arc::new(google_auth::GoogleServiceAccount::parse_json(&data)?);
+
+            let rest_client = Arc::new(google_auth::GoogleRestClient::create(sa.clone())?);
+            let client = google_storage::Client::new(rest_client)?;
+
+            // TODO: Compress it.
+            client
+                .upload("da-sources", "files.json", http::BodyFromData(out_json))
+                .await?;
+
+        }
+
+        Ok(())
+    }
+
+}
+
 
 #[executor_main]
 async fn main() -> Result<()> {
@@ -738,6 +797,7 @@ async fn main() -> Result<()> {
         Command::Fetch(cmd) => cmd.run().await?,
         Command::List => run_list().await?,
         Command::LicenseCheck(cmd) => cmd.run().await?,
+        Command::GenerateFilesJson(cmd) => cmd.run().await?,
     }
 
     Ok(())

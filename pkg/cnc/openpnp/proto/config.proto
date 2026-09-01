@@ -17,6 +17,8 @@ message Part {
     BoardComponentReference board_ref = 4;
 
     bool fiducial = 5;
+
+    double rotation_offset = 6;
 }
 
 message BoardComponentReference {

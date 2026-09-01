@@ -1,5 +1,7 @@
 use std::io::Cursor;
+#[cfg(target_os = "linux")]
 use std::os::linux::fs::MetadataExt;
+#[cfg(target_os = "linux")]
 use std::os::unix::fs::PermissionsExt;
 /// See specification in:
 /// https://en.wikipedia.org/wiki/Tar_(computing)
@@ -423,6 +425,7 @@ impl<Input: Readable> Reader<Input> {
         while let Some(path) = pending.pop() {
             file::create_dir(path).await?;
 
+            #[cfg(target_os = "linux")]
             if let Some(mode) = dir_mode {
                 let mut perms = file::metadata(path).await?.permissions();
                 perms.set_mode(mode);
@@ -488,6 +491,7 @@ impl<Input: Readable> Reader<Input> {
                 file.flush().await?;
 
                 // Preserve any execute bits on regular files.
+                #[cfg(target_os = "linux")]
                 {
                     let mut perms = file.metadata().await?.permissions();
 
@@ -508,6 +512,7 @@ impl<Input: Readable> Reader<Input> {
                     file::create_dir(&path).await?;
                 }
 
+                #[cfg(target_os = "linux")]
                 if let Some(mode) = dir_mode {
                     let mut perms = file::metadata(&path).await?.permissions();
                     perms.set_mode(mode);
@@ -742,9 +747,11 @@ impl<Output: Writeable> Writer<Output> {
 
     /// Appends a file currently on disk to the archive.
     ///
-    /// If the file is a
-    // TODO: We should also append entries for each directory. that is a parent of
-    // the path
+    /// If the file is a directory, it will be recursively added.
+    ///
+    ///
+    /// TODO: We should also append entries for each directory. that is a parent of
+    /// the path
     pub async fn append_file(
         &mut self,
         path: &LocalPath,
@@ -772,17 +779,28 @@ impl<Output: Writeable> Writer<Output> {
     ) -> Result<()> {
         // NOTE: We will not follow symlinks when resolving metadata.
         // TODO: Switch back this.
-        let metadata = file::metadata(path).await?;
+        let metadata = file::symlink_metadata(path).await?;
 
         let (file_type, file_size, mut reader): (FileType, u64, Box<dyn Readable>) = {
             if metadata.is_dir() {
                 (FileType::Directory, 0, Box::new(Cursor::new(&[])))
-            } else if metadata.is_file() || metadata.is_symlink() {
+            } else if metadata.is_file() {
                 let file = LocalFile::open(path)?;
-                // If this is a symlink, then the length will be wrong.
                 (FileType::NormalFile, metadata.len(), Box::new(file))
-            } else {
-                return Err(err_msg("Unsupported file type"));
+            } else if metadata.is_symlink() {
+                #[cfg(target_os = "linux")]
+                {
+                    let path = file::readlink(path)?.to_str().unwrap().as_bytes().to_vec();
+                    (FileType::SymbolicLink, path.len() as u64, Box::new(Cursor::new(path)))
+                }
+
+                #[cfg(not(target_os = "linux"))]
+                {
+                    return Err(format_err!("Unsupported file type: {}: {:?}", path.display(), metadata));
+                }
+            }
+            else {
+                return Err(format_err!("Unsupported file type: {}: {:?}", path.display(), metadata));
             }
         };
 
@@ -794,10 +812,15 @@ impl<Output: Writeable> Writer<Output> {
             .unwrap_or(LocalPath::new(""))
             .join(
                 path.strip_prefix(&options.root_dir)
-                    .ok_or_else(|| err_msg("Path does not start with root_dir"))?,
+                    .map_err(|_| err_msg("Path does not start with root_dir"))?,
             )
-            .normalized()
-            .to_string();
+            .normalize_lexically()?;
+
+        #[cfg(target_os = "linux")]
+        let mut file_name = file_name.to_string();
+
+        #[cfg(not(target_os = "linux"))]
+        let mut file_name = file_name.to_str().unwrap().to_string();
 
         // Only directories will end up '/'
         if file_type == FileType::Directory {
@@ -807,13 +830,14 @@ impl<Output: Writeable> Writer<Output> {
         let mut last_modified_time = None;
         last_modified_time = Some(
             metadata
-                .modified()
+                .modified()?
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_secs(),
         );
 
         let mut archive_metadata = FileMetadata {
+            #[cfg(target_os = "linux")]
             header: Header {
                 file_name,
                 file_mode: Some(metadata.st_mode() & 0o777),
@@ -824,6 +848,18 @@ impl<Output: Writeable> Writer<Output> {
                 file_type,
                 linked_file_name: String::new(),
             },
+            #[cfg(not(target_os = "linux"))]
+            header: Header {
+                file_name,
+                file_mode: None,
+                owner_id: None,
+                group_id: None,
+                file_size: Some(file_size),
+                last_modified_time,
+                file_type,
+                linked_file_name: String::new(),
+            },
+
             ustar_extension: Some(USTarHeaderExtension {
                 // TODO: Look these up: https://man7.org/linux/man-pages/man3/getpwuid.3.html
                 owner_name: String::new(),
@@ -843,6 +879,7 @@ impl<Output: Writeable> Writer<Output> {
         self.append(&archive_metadata, reader.as_mut()).await?;
 
         if metadata.is_dir() {
+            // TODO: Sort the directory.
             for entry in file::read_dir(path)? {
                 pending_paths.push(path.join(entry.name()));
             }

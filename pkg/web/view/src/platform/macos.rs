@@ -257,6 +257,7 @@ pub fn run(mut builder: WebViewBuilder) -> Result<()> {
 
     let on_init = builder.on_init.take();
     let html_content = builder.html.clone();
+    let url_content = builder.url.clone();
 
     unsafe {
         let mtm = MainThreadMarker::new_unchecked();
@@ -384,10 +385,75 @@ pub fn run(mut builder: WebViewBuilder) -> Result<()> {
 
         inner.web_view.store(objc2::rc::Retained::as_ptr(&web_view) as *mut c_void, Ordering::SeqCst);
 
-        let content_ns = NSString::from_str(&html_content);
-        let base_url_ns = NSString::from_str(crate::CUSTOM_SCHEME_URL);
-        let ns_url = NSURL::URLWithString(&base_url_ns);
-        web_view.loadHTMLString_baseURL(&content_ns, ns_url.as_deref());
+        let website_data_store: Retained<objc2::runtime::AnyObject> = msg_send_id![&config, websiteDataStore];
+        let cookie_store: Retained<objc2::runtime::AnyObject> = msg_send_id![&website_data_store, httpCookieStore];
+
+        let load_content = {
+            let web_view = web_view.clone();
+            let html_content = html_content.clone();
+            let url_content = url_content.clone();
+            move || {
+                unsafe {
+                    if let Some(html) = &html_content {
+                        let content_ns = NSString::from_str(&html);
+                        let base_url = url_content.clone().unwrap_or_else(|| crate::CUSTOM_SCHEME_URL.to_string());
+                        let base_url_ns = NSString::from_str(&base_url);
+                        let ns_url = NSURL::URLWithString(&base_url_ns);
+                        let _: () = msg_send![&web_view, loadHTMLString: &*content_ns, baseURL: ns_url.as_deref()];
+                    } else if let Some(url) = &url_content {
+                        let url_ns = NSString::from_str(&url);
+                        let ns_url = NSURL::URLWithString(&url_ns).unwrap();
+                        let request: objc2::rc::Retained<objc2::runtime::AnyObject> = msg_send_id![objc2::class!(NSURLRequest), requestWithURL: &*ns_url];
+                        let _: () = msg_send![&web_view, loadRequest: &*request];
+                    }
+                }
+            }
+        };
+
+        let cookies = builder.cookies.clone();
+        if cookies.is_empty() {
+            load_content();
+        } else {
+            let mut next_block = block2::RcBlock::new(load_content);
+            fn create_ns_cookie(cookie: &crate::Cookie) -> Retained<objc2::runtime::AnyObject> {
+                unsafe {
+                    let props: Retained<objc2::runtime::AnyObject> = msg_send_id![objc2::class!(NSMutableDictionary), dictionary];
+                    let _: () = msg_send![&props, setObject: &*NSString::from_str(&cookie.name), forKey: &*NSString::from_str("NSHTTPCookieName")];
+                    let _: () = msg_send![&props, setObject: &*NSString::from_str(&cookie.value), forKey: &*NSString::from_str("NSHTTPCookieValue")];
+                    let _: () = msg_send![&props, setObject: &*NSString::from_str(&cookie.domain), forKey: &*NSString::from_str("NSHTTPCookieDomain")];
+                    let _: () = msg_send![&props, setObject: &*NSString::from_str(&cookie.path), forKey: &*NSString::from_str("NSHTTPCookiePath")];
+                    if cookie.secure {
+                        let true_num: Retained<objc2::runtime::AnyObject> = msg_send_id![objc2::class!(NSNumber), numberWithBool: true];
+                        let _: () = msg_send![&props, setObject: &*true_num, forKey: &*NSString::from_str("NSHTTPCookieSecure")];
+                    }
+                    if cookie.http_only {
+                        let true_num: Retained<objc2::runtime::AnyObject> = msg_send_id![objc2::class!(NSNumber), numberWithBool: true];
+                        let _: () = msg_send![&props, setObject: &*true_num, forKey: &*NSString::from_str("HttpOnly")];
+                    }
+                    msg_send_id![objc2::class!(NSHTTPCookie), cookieWithProperties: &*props]
+                }
+            }
+
+            let mut iter = cookies.into_iter().rev();
+            let first_cookie = iter.next().unwrap();
+            
+            for cookie in iter {
+                let current_next = next_block.clone();
+                let cookie_store_clone = cookie_store.clone();
+                
+                next_block = block2::RcBlock::new(move || {
+                    let ns_cookie = create_ns_cookie(&cookie);
+                    unsafe {
+                        let _: () = msg_send![&cookie_store_clone, setCookie: &*ns_cookie, completionHandler: &*current_next];
+                    }
+                });
+            }
+            
+            let ns_cookie = create_ns_cookie(&first_cookie);
+            unsafe {
+                let _: () = msg_send![&cookie_store, setCookie: &*ns_cookie, completionHandler: &*next_block];
+            }
+        }
 
         window.setContentView(Some(&web_view));
         window.makeKeyAndOrderFront(None);
@@ -412,7 +478,7 @@ pub fn show_error_dialog(title: &str, message: &str) {
     unsafe {
         let mtm = MainThreadMarker::new_unchecked();
         let _app: Retained<NSApplication> = NSApplication::sharedApplication(mtm);
-        let alert_alloc: objc2::rc::Allocated<NSAlert> = msg_send_id![NSAlert::class(), alloc];
+        let alert_alloc: objc2::rc::Allocated<NSAlert> = msg_send_id![objc2::class!(NSAlert), alloc];
         let alert: Retained<NSAlert> = msg_send_id![alert_alloc, init];
         alert.setMessageText(&NSString::from_str(title));
         alert.setInformativeText(&NSString::from_str(message));

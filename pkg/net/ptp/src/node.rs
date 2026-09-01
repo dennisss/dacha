@@ -271,43 +271,39 @@ impl TimeSyncNode {
     }
 
     async fn background_thread(shared: Arc<Shared>) -> Result<()> {
-        let mut background_state = BackgroundState::None;
+        let mut leader_state = None;
+        let mut basic_client_state = None;
 
         loop {
             let config = lock!(state <= shared.state.lock().await?, {
                 state.config.clone()
             });
 
-
-            match config.role() {
-                TimeSyncRole::LEADER => {
-                    match &background_state {
-                        BackgroundState::Leader(_) => {},
-                        _ => {
-                            background_state = BackgroundState::Leader(LeaderState::default());
-                        }
-                    }
-
-                    let state = match &mut background_state {
-                        BackgroundState::Leader(v) => v,
-                        _ => panic!()
-                    };
-
-                    if let Err(e) = Self::run_leader_cycle(&shared, &config, state).await {
-                        eprintln!("TimeSyncNode::run_leader_cycle failed: {}", e);
-                        executor::sleep(Duration::from_millis(1000)).await?;
-                    }
+            if config.has_leader() {
+                let state = leader_state.get_or_insert_default();
+                if let Err(e) = Self::run_leader_cycle(&shared, &config, state).await {
+                    eprintln!("TimeSyncNode::run_leader_cycle failed: {}", e);
+                    executor::sleep(Duration::from_millis(1000)).await?;
                 }
-                _ => {
-                    background_state = BackgroundState::None;
+
+            } else {
+                leader_state = None;
+            }
+
+            if config.has_basic_client() {
+                let state = basic_client_state.get_or_insert_default();
+                if let Err(e) = Self::run_basic_client_cycle(&shared, &config, state).await {
+                    eprintln!("TimeSyncNode::run_basic_client_cycle failed: {}", e);
+                    executor::sleep(Duration::from_millis(1000)).await?;
                 }
+
+            } else {
+                basic_client_state = None;
             }
 
             // TODO: Add random jitter to this.
             executor::sleep(Duration::from_millis(100)).await?;
         }
-
-
     }
 
     async fn run_leader_cycle(
@@ -325,13 +321,71 @@ impl TimeSyncNode {
         }
         leader_state.last_round = Some(now);
 
-        Self::run_leader_ntp_sync(shared, config, leader_state).await?;
-
         Self::run_leader_all_followers_sync(shared, config, leader_state).await?;
 
         Ok(())
     }
 
+    async fn run_basic_client_cycle(
+        shared: &Arc<Shared>,
+        config: &TimeSyncConfig,
+        basic_state: &mut BasicClientState
+    ) -> Result<()> {
+        let now = Instant::now();
+
+        if let Some(last_time) = &basic_state.last_round {
+            if (now - *last_time) < Duration::from_secs_f32(config.basic_client().sync_interval_seconds()) {
+                return Ok(());
+            }
+        }
+        basic_state.last_round = Some(now);
+
+        let server_addr = config.basic_client().server_addr().parse()?;
+        
+        let start_ptp_time: Duration = shared.ptp_device.get_time()?.into();
+
+        let remote_time = Duration::from_nanos(executor::timeout(
+            Duration::from_secs_f32(1.0),
+            shared.basic_node.ping(&server_addr),
+        ).await??);
+
+        let end_ptp_time: Duration = shared.ptp_device.get_time()?.into();
+
+        let rtt = end_ptp_time - start_ptp_time;
+        if rtt > Duration::from_secs_f32(config.basic_client().max_network_rtt()) {
+            return Err(format_err!("Sync RTT is too large: {:?}", rtt));
+        }
+
+        let local_time = start_ptp_time + rtt / 2;
+        
+        lock!(state <= shared.state.lock().await?, {
+
+            let state = &mut *state;
+
+            let follower_state = state.basic_client_state.as_mut()
+                .ok_or_else(|| err_msg("Not currently a basic client"))?;
+
+            let error = SignedDuration::from(remote_time) - SignedDuration::from(local_time);
+
+            Self::run_time_adjustment(
+                shared,
+                remote_time,
+                error.as_secs_f64(),
+                state.config.basic_client().clock_sync(),
+                &mut follower_state.pi_filter
+            )?;
+
+            follower_state.last_sync = Some(LastSyncMetadata {
+                time: now,
+                error: error.as_secs_f64(),
+                rtt: rtt.as_secs_f64()
+            });
+
+            Ok(())
+        })
+    }
+
+    /*
     async fn run_leader_ntp_sync(
         shared: &Shared,
         config: &TimeSyncConfig,
@@ -351,12 +405,13 @@ impl TimeSyncNode {
             shared,
             real_time,
             error.as_secs_f64(),
-            config.leader().realtime_clock_sync(),
+            config.realtime_clock_sync(),
             &mut leader_state.pi_filter
         )?;
 
         Ok(())
     }
+    */
 
     fn run_time_adjustment(
         shared: &Shared,
@@ -492,6 +547,8 @@ impl TimeSyncNode {
     ) -> Result<()> {
         let request_context = rpc::ClientRequestContext::default();
 
+        // NOTE: This is done in the mocap manager so we don't bother doing it.
+        /*
         if !follower.configured {
             let mut req = ConfigureRequest::default();
             req.set_config(config.clone());
@@ -509,6 +566,7 @@ impl TimeSyncNode {
 
             println!("Configured!");
         }
+        */
 
         /*
         let ptp_endpoints = follower.ptp.resolve().await?;

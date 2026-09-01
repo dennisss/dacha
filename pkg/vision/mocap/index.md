@@ -54,6 +54,37 @@ Make sure to build or source all the following materials:
 - Plug in the network switch into power
 - If the cameras are working, the LEDs on the ethernet jack should be blinking.
 
+### Download the host software
+
+Follow the below appropriate instructions for your OS to download the host software ([developer documentation](./doc/host_software.md)):
+
+#### Linux
+
+- Prerequisites
+    - NetworkManager.
+    - Install `libwebkit2gtk` (required for using the local UI)
+        - Most likely you already have this and you can skip installing it if the app loads without explicitly installing it.
+        - For Ubuntu/Debian: `sudo apt install libwebkit2gtk-4.1-0`
+- Download [mocap-linux-x64.tar.gz](https://dacha.dev/dist/pkg/vision/mocap/app/mocap-linux-x64.tar.gz)
+- Extract the file
+- Double click on the "mocap" binary to open the app.
+
+#### Windows
+
+- Prerequisites
+    - OS Version: Windows 10 or 11 (maybe 8 but I haven't tested)
+    - WebView2
+        - Should be installed by default. If not, install WebView2 from [here](https://developer.microsoft.com/en-us/Microsoft-edge/webview2).
+- TODO
+
+#### MacOS
+
+Note: Only Apple Silicon (M1/M2/... chips) builds are currently distributed.
+
+- Prerequisites
+    - None
+- TODO
+
 
 ### Initial Setup
 
@@ -67,13 +98,55 @@ Make sure to build or source all the following materials:
 - Increase the FPS to a non-zero value and wave around the wand in front of the cameras.
     - Verify that markers (white dots) appear in the camera previews on the left side of the UI.
 
-### Calibration
+### Tuning & Calibration
 
-TODO: Settings tuning, wanding, and origin setting and verify with wand that tracking is right (see the video)
+Now you'll want to tune the settings for your environment. This is explained in [video form here](https://youtu.be/WJ13C_1hDIA?si=4UwEQEMoU51pcZMQ&t=1549)
+
+The general steps are:
+
+- Align the cameras
+- Tune strobe power / threshold (and maybe exposure / gain)
+    - Try waving around the wand around your space while viewing some of the cameras in "Blobs" mode. You want to see reliable dots appears.
+    - WARNING: These settings don't currently save across program restarts so need to be re-entered for now (will be resolved in a future update).
+- Ensure that the PTP and PPS columns in the cameras list are ok.
+    - First the PTP column
+        - There is one **bolded** number which is the PTP leader and this represents the clock sync error to the host.
+            - Depending on how good your ethernet port is, this may be higher or lower, but should be <10ms
+        - For other cameras, this is the error to the leader
+            - Should converge to < 0.1us (< 100ns) for all cameras
+    - Then the PPS column
+        - For all cameras, this shows the error from PTP time to the camera frame times
+        - This column will not converge until the PTP column is stable
+        - All rows should similarly reach < 0.1us (< 100ns)
+    - Note that on a cold start of the cameras, it currently takes up to 30 seconds for timings to fully stabilize.
+        - To be improved with software tuning in the future.
+- Crank up the FPS to target final running FPS
+- (optional) Wait 10-20 minutes for the system to warm up
+- Process the "Start" button in the "Wanding" box in the UI
+- Slowly wave around the wand uniformly in your capture volume
+    - Cameras see the wand best when the T pattern is directly facing them or at a slight angle.
+    - You want to capture enough data so that enough pairs of cameras observe the same wand position to "fully connect all the cameras".
+    - Usually you need 100 - 200 deduped frames of results for good quality
+- Press the "Process" button in the UI
+- Wait for it to complete and then observe that the reprojection error is ok.
+    - Good is <0.25
+- Hit "Apply" to save the camera parameters
+- You can now go the "World" page (linked at the top) to preview the cameras in 3D
+- You should be able to wave around the wand and see it appear in 3D
+- Put the wand down on the ground in the position you want to be the (0,0,0) origin point of your coordinate system.
+    - You should see the 4 wand points still visible in the 3d view.
+- Then hit the "Set Origin" button to shift the coordinate system
+    - The wand should then show up as centered at the intersection of the red/green/blue axes.
+- You are now done with calibration and can immediately start capturing stuff.
+- Once you are done, it is recommended to set FPS to zero before powering down the cameras.
 
 ### API
 
-TODO: Links to API
+The data from the host software can be accessed in realtime from a gRPC client.
+
+See https://github.com/dennisss/mocap-client for example code. Everything that is do-able in the UI is do-able in the API.
+
+### Advanced Tuning
 
 TODO: Links to software design (so that people understand how to tinker with the configs)
 

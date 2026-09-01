@@ -21,10 +21,12 @@ parts: [
     },
 
     # 12mm tape, 8mm part pitch 
+    # TODO: Use the other nozzle
     {
         name: "LED_SFH_4715AS_A01"
         source: ""
         height: 2.29
+        rotation_offset: 90
         board_ref {
             value: "SFH_4715AS_A01"
             package: "LED_SFH_4715AS_A01"

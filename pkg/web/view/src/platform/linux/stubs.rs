@@ -47,6 +47,13 @@ pub struct GtkWebkitVtable {
     pub webkit_web_view_new_with_context: extern "C" fn(*mut c_void) -> *mut c_void,
     pub webkit_web_view_new: extern "C" fn() -> *mut c_void,
     pub webkit_web_view_load_html: extern "C" fn(*mut c_void, *const c_char, *const c_char),
+    pub webkit_web_view_load_uri: extern "C" fn(*mut c_void, *const c_char),
+    pub webkit_web_view_get_context: extern "C" fn(*mut c_void) -> *mut c_void,
+    pub webkit_web_context_get_cookie_manager: extern "C" fn(*mut c_void) -> *mut c_void,
+    pub webkit_cookie_manager_add_cookie: extern "C" fn(*mut c_void, *mut c_void, *mut c_void, Option<extern "C" fn(*mut c_void, *mut c_void, *mut c_void)>, *mut c_void),
+    pub soup_cookie_new: extern "C" fn(*const c_char, *const c_char, *const c_char, *const c_char, c_int) -> *mut c_void,
+    pub soup_cookie_set_http_only: extern "C" fn(*mut c_void, c_int),
+    pub soup_cookie_set_secure: extern "C" fn(*mut c_void, c_int),
     pub webkit_web_view_get_user_content_manager: extern "C" fn(*mut c_void) -> *mut c_void,
     pub webkit_user_content_manager_register_script_message_handler: extern "C" fn(*mut c_void, *const c_char),
     pub webkit_web_view_run_javascript: extern "C" fn(*mut c_void, *const c_char, *mut c_void, *mut c_void, *mut c_void),
@@ -60,7 +67,6 @@ pub struct GtkWebkitVtable {
     pub webkit_settings_set_enable_developer_extras: extern "C" fn(*mut c_void, c_int),
     pub webkit_web_view_get_inspector: extern "C" fn(*mut c_void) -> *mut c_void,
     pub webkit_web_inspector_show: extern "C" fn(*mut c_void),
-    pub webkit_web_view_get_context: extern "C" fn(*mut c_void) -> *mut c_void,
     pub webkit_web_context_get_security_manager: extern "C" fn(*mut c_void) -> *mut c_void,
     pub webkit_security_manager_register_uri_scheme_as_secure: extern "C" fn(*mut c_void, *const c_char),
     pub webkit_security_manager_register_uri_scheme_as_cors_enabled: extern "C" fn(*mut c_void, *const c_char),
@@ -90,9 +96,11 @@ impl GtkWebkitVtable {
         ];
 
         let mut handle = ptr::null_mut();
-        for lib in candidates.iter() {
+        let mut is_webkit_41 = false;
+        for (i, lib) in candidates.iter().enumerate() {
             handle = dlopen(*lib, RTLD_NOW | RTLD_GLOBAL);
             if !handle.is_null() {
+                is_webkit_41 = i < 2;
                 break;
             }
         }
@@ -118,6 +126,37 @@ impl GtkWebkitVtable {
                     };
                     dlclose(handle);
                     return Err(format_err!("Failed to load required symbol '{}' from dynamic library: {}", CStr::from_bytes_with_nul($name).unwrap().to_string_lossy(), err_str));
+                }
+                std::mem::transmute(sym)
+            }};
+        }
+
+        let mut soup_handle = ptr::null_mut();
+        if is_webkit_41 {
+            soup_handle = dlopen(b"libsoup-3.0.so.0\0".as_ptr() as *const c_char, RTLD_NOW | RTLD_GLOBAL);
+            if soup_handle.is_null() {
+                soup_handle = dlopen(b"libsoup-3.0.so\0".as_ptr() as *const c_char, RTLD_NOW | RTLD_GLOBAL);
+            }
+        } else {
+            soup_handle = dlopen(b"libsoup-2.4.so.1\0".as_ptr() as *const c_char, RTLD_NOW | RTLD_GLOBAL);
+            if soup_handle.is_null() {
+                soup_handle = dlopen(b"libsoup-2.4.so\0".as_ptr() as *const c_char, RTLD_NOW | RTLD_GLOBAL);
+            }
+        }
+        
+        if soup_handle.is_null() {
+            // As a last fallback, try resolving it from the webkit handle directly
+            soup_handle = handle;
+        }
+        
+        macro_rules! load_soup_sym {
+            ($name:literal) => {{
+                if soup_handle.is_null() {
+                    return Err(format_err!("Could not load libsoup"));
+                }
+                let sym = dlsym(soup_handle, $name.as_ptr() as *const c_char);
+                if sym.is_null() {
+                    return Err(format_err!("Could not load libsoup symbol"));
                 }
                 std::mem::transmute(sym)
             }};
@@ -164,6 +203,13 @@ impl GtkWebkitVtable {
             webkit_web_view_new_with_context: load_sym!(b"webkit_web_view_new_with_context\0"),
             webkit_web_view_new: load_sym!(b"webkit_web_view_new\0"),
             webkit_web_view_load_html: load_sym!(b"webkit_web_view_load_html\0"),
+            webkit_web_view_load_uri: load_sym!(b"webkit_web_view_load_uri\0"),
+            webkit_web_view_get_context: load_sym!(b"webkit_web_view_get_context\0"),
+            webkit_web_context_get_cookie_manager: load_sym!(b"webkit_web_context_get_cookie_manager\0"),
+            webkit_cookie_manager_add_cookie: load_sym!(b"webkit_cookie_manager_add_cookie\0"),
+            soup_cookie_new: load_soup_sym!(b"soup_cookie_new\0"),
+            soup_cookie_set_http_only: load_soup_sym!(b"soup_cookie_set_http_only\0"),
+            soup_cookie_set_secure: load_soup_sym!(b"soup_cookie_set_secure\0"),
             webkit_web_view_get_user_content_manager: load_sym!(b"webkit_web_view_get_user_content_manager\0"),
             webkit_user_content_manager_register_script_message_handler: load_sym!(b"webkit_user_content_manager_register_script_message_handler\0"),
             webkit_web_view_run_javascript: load_sym!(b"webkit_web_view_run_javascript\0"),
@@ -177,7 +223,6 @@ impl GtkWebkitVtable {
             webkit_settings_set_enable_developer_extras: load_sym!(b"webkit_settings_set_enable_developer_extras\0"),
             webkit_web_view_get_inspector: load_sym!(b"webkit_web_view_get_inspector\0"),
             webkit_web_inspector_show: load_sym!(b"webkit_web_inspector_show\0"),
-            webkit_web_view_get_context: load_sym!(b"webkit_web_view_get_context\0"),
             webkit_web_context_get_security_manager: load_sym!(b"webkit_web_context_get_security_manager\0"),
             webkit_security_manager_register_uri_scheme_as_secure: load_sym!(b"webkit_security_manager_register_uri_scheme_as_secure\0"),
             webkit_security_manager_register_uri_scheme_as_cors_enabled: load_sym!(b"webkit_security_manager_register_uri_scheme_as_cors_enabled\0"),
@@ -265,6 +310,20 @@ pub unsafe fn webkit_web_view_new() -> *mut c_void { (get_vtable().webkit_web_vi
 #[inline(always)]
 pub unsafe fn webkit_web_view_load_html(web_view: *mut c_void, content: *const c_char, base_uri: *const c_char) { (get_vtable().webkit_web_view_load_html)(web_view, content, base_uri) }
 #[inline(always)]
+pub unsafe fn webkit_web_view_load_uri(web_view: *mut c_void, uri: *const c_char) { (get_vtable().webkit_web_view_load_uri)(web_view, uri) }
+#[inline(always)]
+pub unsafe fn webkit_web_view_get_context(web_view: *mut c_void) -> *mut c_void { (get_vtable().webkit_web_view_get_context)(web_view) }
+#[inline(always)]
+pub unsafe fn webkit_web_context_get_cookie_manager(context: *mut c_void) -> *mut c_void { (get_vtable().webkit_web_context_get_cookie_manager)(context) }
+#[inline(always)]
+pub unsafe fn webkit_cookie_manager_add_cookie(manager: *mut c_void, cookie: *mut c_void, callback: Option<extern "C" fn(*mut c_void, *mut c_void, *mut c_void)>, user_data: *mut c_void) { (get_vtable().webkit_cookie_manager_add_cookie)(manager, cookie, ptr::null_mut(), callback, user_data) }
+#[inline(always)]
+pub unsafe fn soup_cookie_new(name: *const c_char, value: *const c_char, domain: *const c_char, path: *const c_char, max_age: c_int) -> *mut c_void { (get_vtable().soup_cookie_new)(name, value, domain, path, max_age) }
+#[inline(always)]
+pub unsafe fn soup_cookie_set_http_only(cookie: *mut c_void, http_only: c_int) { (get_vtable().soup_cookie_set_http_only)(cookie, http_only) }
+#[inline(always)]
+pub unsafe fn soup_cookie_set_secure(cookie: *mut c_void, secure: c_int) { (get_vtable().soup_cookie_set_secure)(cookie, secure) }
+#[inline(always)]
 pub unsafe fn webkit_web_view_get_user_content_manager(web_view: *mut c_void) -> *mut c_void { (get_vtable().webkit_web_view_get_user_content_manager)(web_view) }
 #[inline(always)]
 pub unsafe fn webkit_user_content_manager_register_script_message_handler(ucm: *mut c_void, name: *const c_char) { (get_vtable().webkit_user_content_manager_register_script_message_handler)(ucm, name) }
@@ -290,8 +349,7 @@ pub unsafe fn webkit_settings_set_enable_developer_extras(settings: *mut c_void,
 pub unsafe fn webkit_web_view_get_inspector(web_view: *mut c_void) -> *mut c_void { (get_vtable().webkit_web_view_get_inspector)(web_view) }
 #[inline(always)]
 pub unsafe fn webkit_web_inspector_show(inspector: *mut c_void) { (get_vtable().webkit_web_inspector_show)(inspector) }
-#[inline(always)]
-pub unsafe fn webkit_web_view_get_context(web_view: *mut c_void) -> *mut c_void { (get_vtable().webkit_web_view_get_context)(web_view) }
+
 #[inline(always)]
 pub unsafe fn webkit_web_context_get_security_manager(context: *mut c_void) -> *mut c_void { (get_vtable().webkit_web_context_get_security_manager)(context) }
 #[inline(always)]

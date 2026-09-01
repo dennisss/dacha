@@ -358,7 +358,9 @@ struct HandlerData {
     enable_context_menu: bool,
     devtools: bool,
     devtools_auto_open: bool,
-    html: String,
+    html: Option<String>,
+    url: Option<String>,
+    cookies: Vec<crate::Cookie>,
 }
 
 fn create_env_handler(
@@ -426,23 +428,49 @@ fn create_ctrl_handler(
                         let _ = webview.add_WebMessageReceived(&msg_handler, &mut token);
                     }
 
-                    if let Some(handler) = &data.on_request {
+                    let base_url = data.url.clone().unwrap_or_else(|| crate::CUSTOM_SCHEME_URL.to_string());
+                    if data.on_request.is_some() || data.html.is_some() {
+                        let filter1 = HSTRING::from(base_url.clone() + "*");
+                        let _ = webview.AddWebResourceRequestedFilter(&filter1, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
+                        
                         let filter_str = format!("{}*", crate::CUSTOM_SCHEME_PREFIX);
-                        let filter = HSTRING::from(filter_str);
-                        let _ = webview.AddWebResourceRequestedFilter(&filter, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
+                        let filter2 = HSTRING::from(filter_str);
+                        let _ = webview.AddWebResourceRequestedFilter(&filter2, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
                         
                         let res_handler = create_req_handler(
                             data.handle.clone(),
                             data.inner.clone(),
                             env.clone(),
                             data.html.clone(),
-                            handler.clone()
+                            base_url.clone(),
+                            data.on_request.clone()
                         );
                         let mut token = EventRegistrationToken::default();
                         let _ = webview.add_WebResourceRequested(&res_handler, &mut token);
                     }
+                    
+                    if let Ok(wv2) = webview.cast::<ICoreWebView2_2>() {
+                        if let Ok(cookie_manager) = wv2.CookieManager() {
+                            for cookie in &data.cookies {
+                                if let Ok(wv2_cookie) = cookie_manager.CreateCookie(
+                                    &HSTRING::from(cookie.name.clone()),
+                                    &HSTRING::from(cookie.value.clone()),
+                                    &HSTRING::from(cookie.domain.clone()),
+                                    &HSTRING::from(cookie.path.clone())
+                                ) {
+                                    let _ = wv2_cookie.SetIsHttpOnly(cookie.http_only);
+                                    let _ = wv2_cookie.SetIsSecure(cookie.secure);
+                                    let _ = cookie_manager.AddOrUpdateCookie(&wv2_cookie);
+                                }
+                            }
+                        }
+                    }
 
-                    let _ = webview.Navigate(&HSTRING::from(crate::CUSTOM_SCHEME_URL));
+                    if data.html.is_some() {
+                        let _ = webview.Navigate(&HSTRING::from(base_url));
+                    } else if let Some(url) = &data.url {
+                        let _ = webview.Navigate(&HSTRING::from(url));
+                    }
                 }
             }
             Ok(())
@@ -472,8 +500,9 @@ fn create_req_handler(
     handle: WebViewHandle,
     inner: Arc<WindowsProxyInner>,
     env: ICoreWebView2Environment,
-    html_content: String,
-    handler_cb: Arc<dyn Fn(WebViewHandle, String, String) + Send + Sync>,
+    html_content: Option<String>,
+    base_url: String,
+    handler_cb: Option<Arc<dyn Fn(WebViewHandle, String, String) + Send + Sync>>,
 ) -> ICoreWebView2WebResourceRequestedEventHandler {
     WebResourceRequestedEventHandler::create(
         Box::new(move |_wv, args| {
@@ -484,24 +513,28 @@ fn create_req_handler(
                         let _ = req.Uri(&mut pwstr);
                         let uri = take_pwstr(pwstr);
                         
-                        if uri == crate::CUSTOM_SCHEME_URL || uri == crate::CUSTOM_SCHEME_INDEX_URL {
-                            if let Some(stream) = SHCreateMemStream(Some(html_content.as_bytes())) {
-                                if let Ok(response) = env.CreateWebResourceResponse(
-                                    &stream,
-                                    200,
-                                    &HSTRING::from("OK"),
-                                    &HSTRING::from("Content-Type: text/html\nAccess-Control-Allow-Origin: *")
-                                ) {
-                                    let _ = args.SetResponse(&response);
+                        if uri == base_url || uri == format!("{}/", base_url.trim_end_matches('/')) || uri == crate::CUSTOM_SCHEME_INDEX_URL {
+                            if let Some(html) = &html_content {
+                                if let Some(stream) = SHCreateMemStream(Some(html.as_bytes())) {
+                                    if let Ok(response) = env.CreateWebResourceResponse(
+                                        &stream,
+                                        200,
+                                        &HSTRING::from("OK"),
+                                        &HSTRING::from("Content-Type: text/html\nAccess-Control-Allow-Origin: *")
+                                    ) {
+                                        let _ = args.SetResponse(&response);
+                                    }
                                 }
                             }
                         } else if uri.starts_with(crate::CUSTOM_SCHEME_PREFIX) {
-                            let request_id = inner.request_counter.fetch_add(1, Ordering::SeqCst).to_string();
-                            if let Ok(deferral) = args.GetDeferral() {
-                                let mut reqs = inner.requests.lock().unwrap();
-                                reqs.insert(request_id.clone(), (ComPtr(Some(args.clone())), ComPtr(Some(deferral))));
+                            if let Some(handler_cb) = &handler_cb {
+                                let request_id = inner.request_counter.fetch_add(1, Ordering::SeqCst).to_string();
+                                if let Ok(deferral) = args.GetDeferral() {
+                                    let mut reqs = inner.requests.lock().unwrap();
+                                    reqs.insert(request_id.clone(), (ComPtr(Some(args.clone())), ComPtr(Some(deferral))));
+                                }
+                                handler_cb(handle.clone(), request_id, uri);
                             }
-                            handler_cb(handle.clone(), request_id, uri);
                         }
                     }
                 }
@@ -625,6 +658,8 @@ pub fn run(mut builder: WebViewBuilder) -> Result<()> {
             devtools: builder.devtools,
             devtools_auto_open: builder.devtools_auto_open,
             html: builder.html,
+            url: builder.url,
+            cookies: builder.cookies,
         };
 
         let env_handler = create_env_handler(handler_data);

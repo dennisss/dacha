@@ -109,6 +109,40 @@ pub struct WebViewProxy {
     pub(crate) inner: Arc<LinuxProxyInner>,
 }
 
+struct CookieState {
+    remaining: usize,
+    web_view: *mut c_void,
+    html: Option<String>,
+    url: Option<String>,
+}
+
+unsafe fn load_content(web_view: *mut c_void, html: Option<&String>, url: Option<&String>) -> Result<()> {
+    if let Some(h) = html {
+        let content_cstr = CString::new(h.as_str())
+            .map_err(|e| format_err!("Invalid HTML content string: {}", e))?;
+        let base_uri = url.map(|s| s.as_str()).unwrap_or(crate::CUSTOM_SCHEME_URL);
+        let base_uri_cstr = CString::new(base_uri)
+            .map_err(|e| format_err!("Invalid URL string: {}", e))?;
+        webkit_web_view_load_html(web_view, content_cstr.as_ptr(), base_uri_cstr.as_ptr());
+    } else if let Some(u) = url {
+        let uri_cstr = CString::new(u.as_str())
+            .map_err(|e| format_err!("Invalid URL string: {}", e))?;
+        webkit_web_view_load_uri(web_view, uri_cstr.as_ptr());
+    }
+    Ok(())
+}
+
+extern "C" fn on_cookie_added(_manager: *mut c_void, _res: *mut c_void, user_data: *mut c_void) {
+    unsafe {
+        let state = &mut *(user_data as *mut CookieState);
+        state.remaining -= 1;
+        if state.remaining == 0 {
+            let _ = load_content(state.web_view, state.html.as_ref(), state.url.as_ref());
+            let _ = Box::from_raw(user_data as *mut CookieState);
+        }
+    }
+}
+
 enum GuiTask {
     EvalJs(String),
     SendResponse {
@@ -484,11 +518,49 @@ pub fn run(mut builder: WebViewBuilder) -> Result<()> {
             );
         }
 
-        let content_cstr = CString::new(builder.html)
-            .map_err(|e| format_err!("Invalid HTML content string: {}", e))?;
-        let base_uri_cstr = CString::new(crate::CUSTOM_SCHEME_URL).unwrap();
-
-        webkit_web_view_load_html(web_view, content_cstr.as_ptr(), base_uri_cstr.as_ptr());
+        if builder.cookies.is_empty() {
+            load_content(web_view, builder.html.as_ref(), builder.url.as_ref())?;
+        } else {
+            let context = webkit_web_view_get_context(web_view);
+            let cookie_manager = webkit_web_context_get_cookie_manager(context);
+            
+            let state = Box::new(CookieState {
+                remaining: builder.cookies.len(),
+                web_view,
+                html: builder.html,
+                url: builder.url,
+            });
+            let state_ptr = Box::into_raw(state) as *mut c_void;
+            
+            for cookie in builder.cookies {
+                let name_cstr = CString::new(cookie.name).unwrap();
+                let value_cstr = CString::new(cookie.value).unwrap();
+                let domain_cstr = CString::new(cookie.domain).unwrap();
+                let path_cstr = CString::new(cookie.path).unwrap();
+                
+                let soup_cookie = soup_cookie_new(
+                    name_cstr.as_ptr(),
+                    value_cstr.as_ptr(),
+                    domain_cstr.as_ptr(),
+                    path_cstr.as_ptr(),
+                    -1
+                );
+                
+                if cookie.http_only {
+                    soup_cookie_set_http_only(soup_cookie, 1);
+                }
+                if cookie.secure {
+                    soup_cookie_set_secure(soup_cookie, 1);
+                }
+                
+                webkit_cookie_manager_add_cookie(
+                    cookie_manager,
+                    soup_cookie,
+                    Some(on_cookie_added),
+                    state_ptr
+                );
+            }
+        }
 
         gtk_container_add(window, web_view);
         gtk_widget_show_all(window);

@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="0 0 512 512"
+   width="512"
+   height="512"
+   version="1.1"
+   id="svg69"
+   sodipodi:docname="icon.svg"
+   inkscape:version="1.1.2 (0a00cf5339, 2022-02-04)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview71"
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1.0"
+     inkscape:pageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     showgrid="false"
+     inkscape:zoom="1.4142136"
+     inkscape:cx="105.00536"
+     inkscape:cy="328.80465"
+     inkscape:window-width="2912"
+     inkscape:window-height="1404"
+     inkscape:window-x="498"
+     inkscape:window-y="121"
+     inkscape:window-maximized="0"
+     inkscape:current-layer="svg69" />
+  <defs
+     id="defs21">
+    <!-- Background Gradient -->
+    <linearGradient
+       id="bgGrad"
+       x1="28"
+       y1="28"
+       x2="484"
+       y2="484"
+       gradientUnits="userSpaceOnUse"
+       gradientTransform="matrix(0.9,0,0,0.9,25.6,25.6)">
+      <stop
+         offset="0%"
+         stop-color="#1e1e24"
+         id="stop2" />
+      <stop
+         offset="100%"
+         stop-color="#0b0b0e"
+         id="stop4" />
+    </linearGradient>
+    <!-- Lens Gradient -->
+    <linearGradient
+       id="lensGrad"
+       x1="94"
+       y1="94"
+       x2="418"
+       y2="418"
+       gradientUnits="userSpaceOnUse"
+       gradientTransform="matrix(0.9,0,0,0.9,25.6,25.6)">
+      <stop
+         offset="0%"
+         stop-color="#2a2a35"
+         id="stop7" />
+      <stop
+         offset="100%"
+         stop-color="#121218"
+         id="stop9" />
+    </linearGradient>
+    <!-- LED Glow -->
+    <filter
+       id="glow"
+       x="-0.033333333"
+       y="-0.033333333"
+       width="1.0666667"
+       height="1.0666667">
+      <feGaussianBlur
+         stdDeviation="4"
+         result="blur"
+         id="feGaussianBlur12" />
+      <feMerge
+         id="feMerge18">
+        <feMergeNode
+           in="blur"
+           id="feMergeNode14" />
+        <feMergeNode
+           in="SourceGraphic"
+           id="feMergeNode16" />
+      </feMerge>
+    </filter>
+  </defs>
+  <!-- App Icon Squircle Base -->
+  <rect
+     x="54.400002"
+     y="54.400002"
+     width="403.20001"
+     height="403.20001"
+     rx="90"
+     ry="90"
+     fill="url(#bgGrad)"
+     stroke="#3a3a45"
+     stroke-width="7.2"
+     id="rect23"
+     style="fill:url(#bgGrad)" />
+  <!-- Outer Camera Housing -->
+  <circle
+     cx="256"
+     cy="256"
+     fill="url(#lensGrad)"
+     stroke="#444444"
+     stroke-width="4"
+     id="circle25"
+     r="144"
+     style="fill:url(#lensGrad)" />
+  <!-- Inner Lens -->
+  <circle
+     cx="256"
+     cy="256"
+     fill="#050505"
+     stroke="#1a1a20"
+     stroke-width="5.4"
+     id="circle27"
+     r="72" />
+  <!-- Lens Reflection -->
+  <path
+     d="m 220,202 a 54,54 0 0 1 72,0 54,54 0 0 0 -72,0 z"
+     fill="#ffffff"
+     opacity="0.15"
+     id="path29"
+     style="stroke-width:0.9" />
+  <circle
+     cx="232.60001"
+     cy="223.60001"
+     fill="#ffffff"
+     opacity="0.3"
+     id="circle31"
+     r="10.8"
+     style="stroke-width:0.9" />
+  <!-- LED Strobe Ring -->
+  <g
+     fill="#ff2a6d"
+     filter="url(#glow)"
+     id="g65"
+     transform="matrix(0.9,0,0,0.9,25.6,25.6)">
+    <circle
+       cx="256"
+       cy="120"
+       r="8"
+       id="circle33" />
+    <circle
+       cx="308"
+       cy="130"
+       r="8"
+       id="circle35" />
+    <circle
+       cx="352"
+       cy="160"
+       r="8"
+       id="circle37" />
+    <circle
+       cx="382"
+       cy="204"
+       r="8"
+       id="circle39" />
+    <circle
+       cx="392"
+       cy="256"
+       r="8"
+       id="circle41" />
+    <circle
+       cx="382"
+       cy="308"
+       r="8"
+       id="circle43" />
+    <circle
+       cx="352"
+       cy="352"
+       r="8"
+       id="circle45" />
+    <circle
+       cx="308"
+       cy="382"
+       r="8"
+       id="circle47" />
+    <circle
+       cx="256"
+       cy="392"
+       r="8"
+       id="circle49" />
+    <circle
+       cx="204"
+       cy="382"
+       r="8"
+       id="circle51" />
+    <circle
+       cx="160"
+       cy="352"
+       r="8"
+       id="circle53" />
+    <circle
+       cx="130"
+       cy="308"
+       r="8"
+       id="circle55" />
+    <circle
+       cx="120"
+       cy="256"
+       r="8"
+       id="circle57" />
+    <circle
+       cx="130"
+       cy="204"
+       r="8"
+       id="circle59" />
+    <circle
+       cx="160"
+       cy="160"
+       r="8"
+       id="circle61" />
+    <circle
+       cx="204"
+       cy="130"
+       r="8"
+       id="circle63" />
+  </g>
+</svg>

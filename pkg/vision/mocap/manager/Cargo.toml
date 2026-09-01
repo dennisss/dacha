@@ -28,6 +28,10 @@ http_util = { path = "../../../http/util" }
 web = { path = "../../../web" }
 rpc_util = { path = "../../../rpc/util" }
 mocap_proto = { path = "../proto" }
-mocap_simulation = { path = "../simulation" }
+mocap_simulation = { path = "../simulation", optional = true }
 vision = { path = "../../" }
 sstable = { path = "../../../sstable" }
+
+[features]
+default = []
+simulation = ["mocap_simulation"]

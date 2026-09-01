@@ -190,8 +190,8 @@ impl WebViewBuilder {
 
     /// Set the window icon (shows in the taskbar/dock and titlebar).
     /// The `rgba` vector should contain raw RGBA pixel data (4 bytes per pixel).
-    pub fn with_icon(mut self, rgba: Vec<u8>, width: u32, height: u32) -> Self {
-        self.icon = Some(Icon { rgba, width, height });
+    pub fn with_icon(mut self, icon: Icon) -> Self {
+        self.icon = Some(icon);
         self
     }
 

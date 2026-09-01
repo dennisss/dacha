@@ -22,6 +22,7 @@ use cluster_client::service::create_rpc_channel;
 use file::{project_path, LocalPathBuf};
 use protobuf::Message;
 use vision::{CameraIntrinsicsModel, CameraExtrinsics};
+#[cfg(feature = "simulation")]
 use mocap_simulation::*;
 use math::matrix::Vector2d;
 use protobuf::StaticMessage;
@@ -102,6 +103,7 @@ struct Shared {
     camera_config_state: AsyncVariable<CameraConfigState>,
     merged_blobs: BroadcastChannel<Arc<ReadBlobsResponse>>,
     tracked_points: BroadcastChannel<Arc<ReadTrackedPointsResponse>>,
+    #[cfg(feature = "simulation")]
     simulator: Option<MocapSimulator>,
     skeleton_search_requests: AsyncMutex<HashMap<u32, bool, FastHasherBuilder>>,
     
@@ -213,8 +215,10 @@ impl MocapManager {
 
         let resources = ServiceResourceGroup::new("MocapManager");
 
+        #[cfg(feature = "simulation")]
         let mut simulator = None;
 
+        #[cfg(feature = "simulation")]
         if config.make_dummy_cameras() {
             assert!(config.camera_service().is_empty());
 
@@ -242,6 +246,7 @@ impl MocapManager {
             }),
             merged_blobs: BroadcastChannel::default(),
             tracked_points: BroadcastChannel::default(),
+            #[cfg(feature = "simulation")]
             simulator,
             skeleton_search_requests: Default::default(),
             aux_rpc_server: Default::default(),
@@ -260,6 +265,7 @@ impl MocapManager {
         for per_cam in config.per_camera() {
             let camera_id = per_cam.camera_id();
 
+            #[cfg(feature = "simulation")]
             if config.make_dummy_cameras() {
                 let camera_stub = Arc::new(CameraStub ::new(
                     Arc::new(rpc::LocalChannel::new(
@@ -451,6 +457,7 @@ impl MocapManagerInner {
                 });
             }
 
+            #[cfg(feature = "simulation")]
             ExecuteRequestCommandCase::ConfigureSimulation(c) => {
                 if let Some(sim) = &self.shared.simulator {
                     sim.configure_animation(c)?;
@@ -458,7 +465,10 @@ impl MocapManagerInner {
                     return Err(err_msg("Simulation not currently active"));
                 }
             }
-
+            #[cfg(not(feature = "simulation"))]
+            ExecuteRequestCommandCase::ConfigureSimulation(c) => {
+                return Err(err_msg("Simulation not currently active"));
+            }
             ExecuteRequestCommandCase::StartCheckerboardCalibration(cmd) => {
 
                 let config = self.shared.config.read().await?;
@@ -1339,7 +1349,8 @@ impl MocapManagerInner {
 
         // We need to restart for the camera to notice the new hardware config.
         // NOTE: this will probably return an error since we are killing the software.
-        let _ = restart_camera(&supervisor_stub).await;
+        let res = restart_camera(&supervisor_stub).await;
+        println!("Restart result: {:?}", res);
 
         Ok(())
     }

@@ -12,6 +12,8 @@ const INPUT_PATHS: &'static [&'static str] = &[
     "third_party/noto_sans/font_normal.ttf",
     "third_party/noto_sans/font_mono_normal.ttf",
     "third_party/material_icons/material_symbols_outlined.woff2",
+
+    "out/mocap_app/icons/icon.qoi",
 ];
 
 fn main() {
@@ -51,4 +53,11 @@ fn main() {
     let output_dir = LocalPathBuf::from(std::env::var("OUT_DIR").unwrap());
 
     std::fs::write(output_dir.join("register_assets.rs"), out).unwrap();
+
+    #[cfg(windows)]
+    {
+        let mut res = embed_resource::Resource::new();
+        res.set_icon(project_dir.join("out/mocap_app/icons/icon.ico").to_str().unwrap());
+        res.compile().unwrap();
+    }
 }

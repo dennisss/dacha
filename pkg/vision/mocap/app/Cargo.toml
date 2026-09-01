@@ -15,6 +15,7 @@ protobuf = { path = "../../../protobuf" }
 protobuf_json = { path = "../../../protobuf/json" }
 rpc = { path = "../../../rpc" }
 net = { path = "../../../net" }
+image = { path = "../../../image" }
 http = { path = "../../../http" }
 http_util = { path = "../../../http/util" }
 websocket = { path = "../../../http/websocket" }
