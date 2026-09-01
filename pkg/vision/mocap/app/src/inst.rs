@@ -19,6 +19,14 @@ use crate::protocol::*;
 use crate::config::*;
 use crate::http_server::*;
 
+#[derive(Args)]
+pub struct MocapAppArgs {
+    data_dir: Option<LocalPathBuf>,
+
+    #[arg(default = false)]
+    enable_devtools: bool, 
+}
+
 pub struct MocapApp {
     shared: Arc<Shared>
 }
@@ -34,7 +42,14 @@ struct Shared {
 
 impl MocapApp {
 
-    pub async fn create(data_dir: LocalPathBuf) -> Result<()> {
+    pub async fn create(args: MocapAppArgs) -> Result<()> {
+        let data_dir = match args.data_dir {
+            Some(v) => v,
+            None => file::local_app_data_dir("mocap")?
+        };
+
+        file::create_dir_all(&data_dir).await?;
+
         let config = read_base_config(&data_dir).await?;
 
         let manager = Arc::new(MocapManager::create(
@@ -59,14 +74,19 @@ impl MocapApp {
 
         // TODO: Should also exit on internal manager failures.
 
-        WebViewBuilder::new("Mocap Manager", 1920, 1080)
+        let mut builder = WebViewBuilder::new("Mocap Manager", 1920, 1080)
             .load_url(&format!("http://127.0.0.1:{}", http_port))
             .with_icon(Self::load_icon().await?)
-            // .with_devtools(true)
-            // .with_devtools_auto_open(true)
             .with_prefer_dark_theme(true)
-            .with_user_data_dir(data_dir.join("webview").to_str().unwrap())
-            .run()?;
+            .with_user_data_dir(data_dir.join("webview").to_str().unwrap());
+
+        if args.enable_devtools {
+            builder = builder
+                .with_devtools(true)
+                .with_devtools_auto_open(true);
+        }
+
+        builder.run()?;
 
         Ok(())
     }

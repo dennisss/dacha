@@ -39,3 +39,27 @@ Parts to buy:
     - Scale to be dimensionally accurate (usually 100.5%)
     - Drill out the holes with a 4mm drill bit if screws don't barely fit.
 
+## Assembly
+
+The final wand we are building should look something like the following image (though your wand will likely vary depending on the aluminum extrusion length):
+
+![](./images/wand_assembled.jpg)
+
+With the pattern of markers and screws shown more precisely here:
+
+![](./images/wand_pattern.png)
+
+The process of building this is as follows:
+
+- Combine the 2 aluminum extrusions on a flat surface using the right angle brackets
+    - Use the screw hole plate as a guide (one side of the top "T" extrusion will likely be longer than the other to fit all the screws).
+- Tighten the right angle brackets while keeping the extrusions flat.
+- Flip over the wand (we will only insert hardware into the side that was on the flat surface)
+- Place the 3d printed holes plate over the extrusion
+- Insert into the labeled holes either:
+    - T-nut + wand standoff
+    - or T-nut + screw
+- Do this from one side of the wand to the other (tightening screws as you go and ensuring the 3d printed guide stays flat on the extrusion)
+- Screw on the markers
+- Flip over the wand and verify that all the markers are at the same level
+    - There should be minimal wobble when the wand is standing on the tips of the markers on a flat surface.

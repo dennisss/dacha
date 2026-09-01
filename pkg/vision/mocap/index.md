@@ -31,9 +31,9 @@ Make sure to build or source all the following materials:
 - 1 x [PoE+ capable network switch](./doc/network_switch.md)
 - 1 x Linux/Windows/macOS Host Computer
     - CPU Specs: 4-core 2.2Ghz+, 8Gb RAM (x64 Linux/Windows or Apple Silicon Mac)
-    - This is used for aggregating 
+        - Linux (Ubuntu LTS) is currently the most well tested and optimized OS
+    - This is used for aggregating the data from many cameras and triangulating to 3D.
     - If you care about latency, prefer a dedicated computer or one with at least 4 cores that can be dedicated to mocap.
-    - I'm going to support Linux/Windows/macOS operating systems, but I do all my testing on Linux, so Linux is likely to be the most stable implementation.
 - 1 x [Ethernet Adapter](./doc/host_ethernet_adapter.md)
 - (N + 1) x Cat 6 or better ethernet cables
     - From the network switch to all cameras + host computer.
@@ -61,7 +61,10 @@ Follow the below appropriate instructions for your OS to download the host softw
 #### Linux
 
 - Prerequisites
-    - NetworkManager.
+    - TLDR: Skip trying to install these unless you see issues with running the app.
+    - NetworkManager
+        - Most Linux desktop distros should come with this pre-installed.
+        - If not, you may need to manually setup your network interface as described [here](./doc/networking.md).
     - Install `libwebkit2gtk` (required for using the local UI)
         - Most likely you already have this and you can skip installing it if the app loads without explicitly installing it.
         - For Ubuntu/Debian: `sudo apt install libwebkit2gtk-4.1-0`
@@ -144,10 +147,23 @@ The general steps are:
 
 The data from the host software can be accessed in realtime from a gRPC client.
 
-See https://github.com/dennisss/mocap-client for example code. Everything that is do-able in the UI is do-able in the API.
+See https://github.com/dennisss/mocap-client for example code. The UI itself operates as an RPC client so everything that is do-able in the UI is do-able in the API.
 
 ### Advanced Tuning
 
-TODO: Links to software design (so that people understand how to tinker with the configs)
+Currently the default settings in the configs are not yet well tuned. Described below is how to go about tweaking the internals of the algorithms to optimize for your environment. If you find a much better set of parameters, let me know and I'll see if we can move the default values closer to those:
 
-TODO: Troubleshooting
+- Find the location of your data directory as described in [this page](./doc/host_software.md).
+- Edit the `config-base.pbtxt` file to tweak 
+    - The individual nested fields are documented in the `.proto` files ([MocapManagerConfig](/pkg/vision/mocap/proto/manager.proto) is the top level config).
+    - Note that edits to this file require a restart of the app to take effect.
+- These are likely to be the most interesting fields to tune:
+    - `initial_camera_config.blob_filter` : These parameters are applied on each camera to filter out blobs (connected components) in the image that look like sphere projections (circles or ellipsis). 
+    - `matching` controls the 2D to 3D triangulation process and will let you tune between maximum precision and maximum robustness
+        - e.g. high `min_num_matches` + low `max_reprojection_error` will result in very strict matching and will be unlikely to produce incorrect robusts but will be flakier. Relaxing these allows getting more stability but results may sometimes be worse.
+    - `wanding` controls parameters used during the wandin calibration
+    - `sphere_projection_filter` is the filter used to reject non-spherical projections
+        - Currently this runs on the host software ONLY during wanding.
+- You can find more comprehensive design documentation for how the individual algorithms here:
+    - [Camera software](./doc/camera_software.md)
+    - [Host software](./doc/host_software.md)

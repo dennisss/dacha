@@ -23,27 +23,14 @@ use crypto::hasher::Hasher;
 use mocap_app::*;
 
 
-#[derive(Args)]
-struct Args {
-    data_dir: Option<LocalPathBuf>,
-}
-
 include!(concat!(env!("OUT_DIR"), "/register_assets.rs"));
 
 
 async fn main_inner() -> Result<()> {
     register_assets()?;
 
-    let args = common::args::parse_args::<Args>()?;
-
-    let data_dir = match args.data_dir {
-        Some(v) => v,
-        None => file::local_app_data_dir("mocap")?
-    };
-
-    file::create_dir_all(&data_dir).await?;
-
-    MocapApp::create(data_dir).await?;
+    let args = common::args::parse_args::<MocapAppArgs>()?;
+    MocapApp::create(args).await?;
 
     Ok(())
 }

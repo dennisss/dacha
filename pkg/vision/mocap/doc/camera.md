@@ -26,13 +26,8 @@ Below is all the documentation of how thee cameras are designed. These are sorte
 - [Hardware for the cameras](./camera_hardware.md)
 - [Setting up the camera OS image](./camera_os.md)
 - [Microcontroller Firmware](./camera_mcu.md)
-- MCU Firmware
-    - TODO: Add complete info on flashing the MCU for the first time.
-- Camera Software
-    - Installed initially as part of the OS.
-    - Mocap Camera Code
-        - [//pkg/vision/mocap/camera](/pkg/vision/mocap/camera) This is where the main binary than runs on the camera lives.
-    - Connected Components Code
-        - [//pkg/vision/src/connected_components](/pkg/vision/src/connected_components)
+- [MCU Firmware](./camera_mcu.md)
+- [Camera Software](./camera_software.md)
+    - (installed initially as part of the OS image).
 - [Intrinsics Calibration](./camera_instrinsics.md)
 
