@@ -19,28 +19,31 @@ impl SocketOptions {
 
             let s = socket(AF_INET as i32, sock_type, sock_proto);
             if s == INVALID_SOCKET {
-                return Err(std::io::Error::last_os_error());
+                return Err(std::io::Error::from_raw_os_error(WSAGetLastError()));
             }
 
             let mut mode: u32 = 1; // 1 = non-blocking, 0 = blocking
             if ioctlsocket(s, FIONBIO, &mut mode) == SOCKET_ERROR {
+                let error = WSAGetLastError();
                 closesocket(s);
-                return Err(std::io::Error::last_os_error());
+                return Err(std::io::Error::from_raw_os_error(error));
             }
 
             // NOTE: Only makes a difference for UDP.
-            if let Some(if_idx) = &self.device_index {
-                let if_idx = if_idx.to_be();
-                if setsockopt(
-                    s,
-                    IPPROTO_IP as i32,
-                    IP_MULTICAST_IF as i32,
-                    core::mem::transmute(&if_idx),
-                    std::mem::size_of_val(&if_idx) as i32,
-                ) == SOCKET_ERROR
-                {
-                    closesocket(s);
-                    return Err(std::io::Error::last_os_error());
+            if self.typ.unwrap() == SocketType::UDP {
+                if let Some(if_idx) = &self.device_index {
+                    let if_idx = if_idx.to_be();
+                    if setsockopt(
+                        s,
+                        IPPROTO_IP as i32,
+                        IP_MULTICAST_IF as i32,
+                        core::mem::transmute(&if_idx),
+                        std::mem::size_of_val(&if_idx) as i32,
+                    ) == SOCKET_ERROR {
+                        let error = WSAGetLastError();
+                        closesocket(s);
+                        return Err(std::io::Error::from_raw_os_error(error));
+                    }
                 }
             }
 
@@ -50,12 +53,11 @@ impl SocketOptions {
                     s,
                     core::mem::transmute(&addr),
                     std::mem::size_of_val(&addr) as i32,
-                ) == SOCKET_ERROR
-                {
+                ) == SOCKET_ERROR {
+                    let error = WSAGetLastError();
                     closesocket(s);
-                    return Err(std::io::Error::last_os_error());
+                    return Err(std::io::Error::from_raw_os_error(error));
                 }
-
             }
 
             if let Some(addr) = &self.connect_addr {
@@ -65,13 +67,12 @@ impl SocketOptions {
                     s,
                     core::mem::transmute(&addr),
                     std::mem::size_of_val(&addr) as i32,
-                ) == SOCKET_ERROR
-                {
-                    let err = WSAGetLastError();
+                ) == SOCKET_ERROR {
+                    let error = WSAGetLastError();
                     // WSAEWOULDBLOCK is expected; the connection is proceeding asynchronously.
-                    if err != WSAEWOULDBLOCK {
+                    if error != WSAEWOULDBLOCK {
                         closesocket(s);
-                        return Err(std::io::Error::from_raw_os_error(err));
+                        return Err(std::io::Error::from_raw_os_error(error));
                     }
                 }
             }

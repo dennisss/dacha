@@ -193,6 +193,16 @@ impl<S: mio::event::Source> ExecutorMioSource<S> {
             last_epoch: inst.poll_epoch.load(Ordering::SeqCst),
         }
     }
+
+    // Waits for at least one READABLE|WRITEABLE event to be triggered since the file was registered.
+    pub async fn wait_first_event(&self) {
+        let waiter = ExecutorMioWaiter {
+            inst: self,
+            last_epoch: 0
+        };
+
+        waiter.await;
+    }
 }
 
 impl<S: mio::event::Source> Drop for ExecutorMioSource<S> {

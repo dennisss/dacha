@@ -231,12 +231,30 @@ void Update_Output_Pulse(volatile OutputPulseState* state, int channel_index, bo
 
     // 2. Check for New Cycle (PPS arrived)
     // Only reset when the output level is currently low so that the previous pulse can finish.
+    //
+    // NOTE: There is a race condition between scheduling the
+    // last pulse of each cycle (starting on the )
+    // Ensure we only check when a round number of pulses has been generated.
     if (state->current_base_time != g_pll.last_pulse_time &&
-        (state->pulse_position % 2) == 0) {
+        (state->pulse_position % 2) == 0 &&
+        (state->pulse_position / 2) % pll_config.pulse_rate == 0) {
+        
+        uint32_t delta = g_pll.last_pulse_time - state->current_base_time;
+        // Calculate how many seconds have elapsed since the base time
+        uint32_t seconds = (delta + (g_pll.pps_width / 2)) / g_pll.pps_width;
+        if (seconds == 0) seconds = 1;
+        
         // New Cycle!
         state->current_base_time = g_pll.last_pulse_time;
         state->current_cycle_width = g_pll.pps_width;
-        state->pulse_position = 0;
+        
+        uint32_t pulses_to_subtract = seconds * pll_config.pulse_rate * 2;
+        if (state->pulse_position >= pulses_to_subtract) {
+            state->pulse_position -= pulses_to_subtract;
+        } else {
+            state->pulse_position = 0;
+        }
+        
         state->error_state = false; // Reset error state on new cycle
     }
     
@@ -248,13 +266,6 @@ void Update_Output_Pulse(volatile OutputPulseState* state, int channel_index, bo
     bool is_rising = (state->pulse_position % 2) == 0;
     uint32_t pulse_index = state->pulse_position / 2;
 
-    // TODO: Eventually comment this out, but this will require better handling of the reset
-    // condition to ensure we don't try scheduling a pulse in the past when we do a
-    // current_base_time reset. e.g. copy the pulse_position mod pulse_rate when we
-    // sync to a new base_time.
-    if (pulse_index == pll_config.pulse_rate) {
-        return;
-    }
 
     // 3. Scheduling Loop
     // Try to schedule the next event. If it's in the past, abort.
@@ -351,15 +362,25 @@ void PPS_Input_Callback(uint32_t capture_val)
 
     } else if (g_pll.next_pulse_index == 1) {
         // Pulse #1: First period
-        // TODO: Reject widths that are outo f expected range.
-        g_pll.pps_width = capture_val - g_pll.last_pulse_time;
+        uint32_t delta = capture_val - g_pll.last_pulse_time;
+        uint32_t num_secs = (delta + (TICKS_PER_SEC / 2)) / TICKS_PER_SEC;
+        if (num_secs == 0) num_secs = 1;
+        
+        g_pll.pps_width = delta / num_secs;
         g_pll.pll_error = 0;
         g_pll.last_pulse_time = capture_val;
         g_pll.next_pulse_index++;
     } else {
         // Pulse > 1
-        uint32_t expected = g_pll.last_pulse_time + g_pll.pps_width;
+        uint32_t delta = capture_val - g_pll.last_pulse_time;
+        uint32_t num_secs = (delta + (g_pll.pps_width / 2)) / g_pll.pps_width;
+        if (num_secs == 0) num_secs = 1;
+        
+        uint32_t expected = g_pll.last_pulse_time + num_secs * g_pll.pps_width;
         int32_t error = (int32_t)(capture_val - expected);
+        
+        error /= (int32_t) num_secs;
+        
         g_pll.pll_error = error;
 
         // Max error is 1 millisecond.
@@ -380,8 +401,9 @@ void PPS_Input_Callback(uint32_t capture_val)
         // g_pll.next_pulse_index++;
     }
     
-    uint32_t min_width = TICKS_PER_SEC - (TICKS_PER_SEC / 1000);
-    uint32_t max_width = TICKS_PER_SEC + (TICKS_PER_SEC / 1000);
+    // Max 500ppm difference between all crystals in the network.
+    uint32_t min_width = TICKS_PER_SEC - (TICKS_PER_SEC / 2000);
+    uint32_t max_width = TICKS_PER_SEC + (TICKS_PER_SEC / 2000);
     if (g_pll.pps_width < min_width) {
         g_pll.pps_width = min_width;
     } else if (g_pll.pps_width > max_width) {

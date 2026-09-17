@@ -11,7 +11,7 @@ pub struct SocketOptions {
     pub connect_addr: Option<SocketAddr>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum SocketType {
     UDP,
     TCP

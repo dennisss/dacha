@@ -49,7 +49,7 @@ Make sure to build or source all the following materials:
 
 - If you haven't already, assemble the wand
 - Mount all the cameras rigidly around your room
-- Route 1 ethernet cable per cable back to the network switch
+- Route 1 ethernet cable per camera back to the network switch
 - Route 1 ethernet cable from the network switch to the ethernet jack on host your computer. 
 - Plug in the network switch into power
 - If the cameras are working, the LEDs on the ethernet jack should be blinking.
@@ -78,7 +78,10 @@ Follow the below appropriate instructions for your OS to download the host softw
     - OS Version: Windows 10 or 11 (maybe 8 but I haven't tested)
     - WebView2
         - Should be installed by default. If not, install WebView2 from [here](https://developer.microsoft.com/en-us/Microsoft-edge/webview2).
-- TODO
+- Download [mocap-windows-x64.zip](https://dacha.dev/dist/pkg/vision/mocap/app/mocap-windows-x64.zip)
+- Extract the file
+- Double click on the "Mocap.exe" file to open the app.
+    - You will probably be prompted to allow the app to pass through the Windows firewall since it needs to connect to the cameras.
 
 #### MacOS
 

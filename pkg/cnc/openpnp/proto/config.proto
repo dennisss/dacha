@@ -18,11 +18,20 @@ message Part {
 
     bool fiducial = 5;
 
+    // The number of degrees you need to turn the part from the feeder orientation to the
+    // 0 rotation in Kicad (when the part is on the front of the board)
+    // (positive is counter-clockwise).
     double rotation_offset = 6;
+
+    FeederConfig feeder = 7;
 }
 
 message BoardComponentReference {
-    string value = 1;
+    repeated string value = 1;
     string package = 2;
 }
 
+message FeederConfig {
+    double width = 1;
+    double pitch = 2;
+}

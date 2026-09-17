@@ -226,6 +226,8 @@ impl RecordReader {
 
         // TODO: Also sync all directories leading up to this file before opening the
         // file.
+        // (main issue with this is that on windows, this requires file write access)
+        #[cfg(target_os = "linux")]
         file.sync_data().await?;
 
         let mut block = vec![];

@@ -239,7 +239,7 @@ members = [
 
 [workspace.dependencies]
 mio = { version = "1.2.2", default-features = false, features = ["os-poll", "net"] }
-windows-sys = { version = "0.61.2", features = ["Win32_System_Console"] }
+windows-sys = { version = "0.61.2", features = ["Win32_System_Console", "Win32_Security_Cryptography", "Win32_Foundation"] }
 syn = { version = "1.0.23", features = ["extra-traits", "full"] }
 pin-project-lite = { version = "0.2.17" }
 

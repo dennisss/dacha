@@ -95,6 +95,14 @@ impl TcpStream {
             )
         )?);
 
+        // Wait for connecting to finish. Lots of stuff fails with different errors on windows
+        // if we attempt to use the socket before it is fully connected.
+        inner.wait_first_event().await;
+        inner.run(|sock| {
+            sock.take_error()
+        })
+        .remap_std_error::<NetworkError, _>(|| "TCPStream::connect completed with error".into())?;
+
         Ok(Self {
             inner,
             peer: addr,

@@ -52,11 +52,43 @@ pub fn clocked_rng() -> MersenneTwisterRng {
 ///
 /// Once done, the provided buffer will be filled with the random bytes to the
 /// end.
+#[cfg(not(target_os = "windows"))]
 pub async fn secure_random_bytes(buf: &mut [u8]) -> Result<()> {
     // See http://man7.org/linux/man-pages/man7/random.7.html
     // TODO: Reuse the file handle across calls.
     let mut f = LocalFile::open("/dev/random")?;
     f.read_exact(buf).await?;
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+pub async fn secure_random_bytes(buf: &mut [u8]) -> Result<()> {
+    use windows_sys::Win32::Foundation::STATUS_SUCCESS;
+    use windows_sys::Win32::Security::Cryptography::{
+        BCryptGenRandom, BCRYPT_USE_SYSTEM_PREFERRED_RNG,
+    };
+
+    if buf.is_empty() {
+        return Ok(());
+    }
+
+    let len = buf.len() as u32;
+
+    // TODO: Maybe avoid blocking in this.
+    // TODO: Use ProcessPrng instead?
+    let status = unsafe {
+        BCryptGenRandom(
+            std::ptr::null_mut(),
+            buf.as_mut_ptr(),
+            buf.len() as u32,
+            BCRYPT_USE_SYSTEM_PREFERRED_RNG,
+        )
+    };
+
+    if status != STATUS_SUCCESS {
+        return Err(format_err!("Failure generating random bytes: {}", status));
+    }
+
     Ok(())
 }
 

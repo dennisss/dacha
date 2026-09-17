@@ -16,33 +16,38 @@ files: [
     },
     {
         path: "dist/pkg/vision/mocap/app/mocap-linux-x64.tar.gz"
-        size: 13550360
-        sha256_sum: "6a562cd5051253fd0d4b1820bd8bd67aa0c771ee04d01e00f1c7e7fcf45d624a"
+        size: 13554228
+        sha256_sum: "e7e5be48e3bca15cb620d3f7cc0e943f24f24a4089b8f678e9c5977ec47e5f9b"
+    },
+    {
+        path: "dist/pkg/vision/mocap/app/mocap-windows-x64.zip"
+        size: 6487673
+        sha256_sum: "bcb031bc04e8c4c59be116b0fc9437091c6147d387fb71a43605a7ad62b0640b"
     },
     {
         path: "dist/pkg/vision/mocap/mocap-camera.deb"
-        size: 9447234
-        sha256_sum: "27f7aa5e0d8c93b50e4c4e098741bf973700fb5fb85ccb6d7570531cba2c6475"
+        size: 9452006
+        sha256_sum: "284dfb09b7640e8676386dbd5a8cbee1ca62dc895cf51ebe72232cc2cd0a04aa"
     },
     {
         path: "dist/pkg/vision/mocap/mocap-supervisor.deb"
-        size: 3779254
-        sha256_sum: "3f7ce90592f7974322f7ef333b6cff29060f3631631a01f57d04b6ad3b0a0d98"
+        size: 3773342
+        sha256_sum: "2f303b3444251ffc2118df5da98f01690ec071ab00733e6ce82dd13f0fd13715"
     },
     {
         path: "dist/pkg/vision/mocap/pps_divider.bin"
-        size: 6588
-        sha256_sum: "7e00b973f56a8e9862a7b38de3d836f765bd681bd099bd532fe6abc90b3347af"
+        size: 6704
+        sha256_sum: "ec62c0ca3a286b3a03e98ebfacd6907b805ccaf8df4e089340aaa630017adb64"
     },
     {
         path: "dist/pkg/vision/mocap/pps_divider.elf"
-        size: 190572
-        sha256_sum: "e8d42a8de2e91ecfebfcc622da24f16fb4debf1c66ee16c72fbae7348ed96a48"
+        size: 191416
+        sha256_sum: "fdcf0676e9b6be2d2d03969560844fe10ed07cc4d5d7fbc0890488ce48286e1c"
     },
     {
         path: "dist/third_party/pi-gen/Daspbian-mocap-lite.img.gz"
-        size: 140387862
-        sha256_sum: "013867a4c80048ea2c176dbf002be565af45f69dcd43c6271a07cbbd443fcdfd"
+        size: 140403151
+        sha256_sum: "6916d430a63a316462fa6680e031a628bc8cbdc70a3a88856b72db5ba81d291a"
     },
     {
         path: "doc/asus_ssd_fan/images/image.jpg"
@@ -2555,6 +2560,21 @@ files: [
         sha256_sum: "31874292675fb87831599ae228bd1f2c32c5e25902a15d200352e7090a72cc1d"
     },
     {
+        path: "pkg/vision/mocap/parts/case-hinge-r1.3mf"
+        size: 420622
+        sha256_sum: "7d6df03d5083325e86805d64462d6c59482d6b2237682abea93ae5bf56506b9b"
+    },
+    {
+        path: "pkg/vision/mocap/parts/case-hinge-r1.stl"
+        size: 444284
+        sha256_sum: "c7884ee4b1c287522986dc447acb22c08af497fda86017a0263a183241c2643f"
+    },
+    {
+        path: "pkg/vision/mocap/parts/case-hinge-r2.stl"
+        size: 414984
+        sha256_sum: "2217eafe1a1a6c35f499d3fae14830ee00cc69914c398004d5d9835cdb4b62a3"
+    },
+    {
         path: "pkg/vision/mocap/parts/case-hinge-screw.stl"
         size: 415384
         sha256_sum: "45b70f71ba69bd84597ff5b9216727c9e6bb67c9bbaa0957ce4881844656ce8f"
@@ -2570,16 +2590,6 @@ files: [
         sha256_sum: "2afb841840d99eff4951196570739087431b82c0c9a67543c6db5c68107bbae0"
     },
     {
-        path: "pkg/vision/mocap/parts/case-hinge.3mf"
-        size: 420622
-        sha256_sum: "7d6df03d5083325e86805d64462d6c59482d6b2237682abea93ae5bf56506b9b"
-    },
-    {
-        path: "pkg/vision/mocap/parts/case-hinge.stl"
-        size: 444284
-        sha256_sum: "c7884ee4b1c287522986dc447acb22c08af497fda86017a0263a183241c2643f"
-    },
-    {
         path: "pkg/vision/mocap/parts/case-top-r1.stl"
         size: 1577784
         sha256_sum: "ae5a203b70b1d87bca79ffa32c1d08598be77faa5715557d2d2809cf8e750c7d"
@@ -2591,8 +2601,8 @@ files: [
     },
     {
         path: "pkg/vision/mocap/parts/case.3mf"
-        size: 926585
-        sha256_sum: "9d132bd9d3d59a2d79ea17a74e5661391b479fba820db016e29da45b0f1941a7"
+        size: 936843
+        sha256_sum: "93f1a153d7a1ae8f1883925569ac39f2956351ea62dc5053464c43ef98abdc8b"
     },
     {
         path: "pkg/vision/mocap/parts/ceiling-clip.stl"
@@ -2608,6 +2618,36 @@ files: [
         path: "pkg/vision/mocap/parts/compute-board-holder.stl"
         size: 448284
         sha256_sum: "b04e6bbd4ce1235b8f96807fa6bcda192714270a787499c9cde5249580547d8a"
+    },
+    {
+        path: "pkg/vision/mocap/parts/compute-board-reflow-spacer.stl"
+        size: 48484
+        sha256_sum: "84652da4202d126b1f66fd32301a8d6eae0793ed7fa2896107e7069b0eff57ea"
+    },
+    {
+        path: "pkg/vision/mocap/parts/compute-board-solder-helper-bottom.stl"
+        size: 118884
+        sha256_sum: "03ae7166c858422a1b7e07de04d91664f72e3cdcc7e997cfde6cad6ab5a74db7"
+    },
+    {
+        path: "pkg/vision/mocap/parts/compute-board-solder-helper-top.stl"
+        size: 205084
+        sha256_sum: "332170efb65b5ff956b777c635211874cdf7bcc9e880950f3426808effa559c1"
+    },
+    {
+        path: "pkg/vision/mocap/parts/compute-board-soldering-helper.3mf"
+        size: 102017
+        sha256_sum: "82c0ea6e94b6deaa092720535698739c91f1a21e8ba2b05923b5166aed96400b"
+    },
+    {
+        path: "pkg/vision/mocap/parts/compute-module-washers-ring.3mf"
+        size: 81738
+        sha256_sum: "67b9548a1ffc1f4320579fc093c3e416b838651409ab1600e1e429025c4f2552"
+    },
+    {
+        path: "pkg/vision/mocap/parts/compute-module-washers-ring.stl"
+        size: 258484
+        sha256_sum: "2406bfa9aa6226c41678cad87e4e5a0ee725309cbebb4ed09196fa500598991b"
     },
     {
         path: "pkg/vision/mocap/parts/dot-threaded-rod-holder.stl"
@@ -2645,6 +2685,16 @@ files: [
         sha256_sum: "ca8f546a9c31a19c9d89062d3d814cbf8894a5ae131a083d1e06d134665ac41d"
     },
     {
+        path: "pkg/vision/mocap/parts/led-board-solder-helper.stl"
+        size: 62884
+        sha256_sum: "9520900ba5233e27e1cd4d75d5bc17894420422543913cb681ca226500aecf9f"
+    },
+    {
+        path: "pkg/vision/mocap/parts/led-board-soldering-helper.3mf"
+        size: 45556
+        sha256_sum: "973b4d672dc2786cf1c3d0319d6d3601afb19ac76dc57b9764fbfc32f03770da"
+    },
+    {
         path: "pkg/vision/mocap/parts/led-heatsink-r1.step"
         size: 238964
         sha256_sum: "93ce21cbe2bb78b5b1e14517f894c59b4b6decc53a774a84d0d1c7eecc05db50"
@@ -2666,13 +2716,13 @@ files: [
     },
     {
         path: "pkg/vision/mocap/parts/led-heatsink-r2-stencil.dxf"
-        size: 301462
-        sha256_sum: "fac6ba277efe1664a14f745b11143a8185d51e55c37da1e7982fc00edd1ac408"
+        size: 282628
+        sha256_sum: "23c9585685ab637f75816abd27bc2dfe66991e80be8bc24de69f7d86a22872b6"
     },
     {
         path: "pkg/vision/mocap/parts/led-heatsink-r2-stencil.svg"
-        size: 46003
-        sha256_sum: "ba4befb7023accdeb19e09eb20dd927fc76ee5bb3664d91a9e7b66e1e965b3e7"
+        size: 42460
+        sha256_sum: "d9dab4741ed95654348259babbdf056a0f61ecfe72c9f65cf61635ebdbdff510"
     },
     {
         path: "pkg/vision/mocap/parts/led-heatsink-r2.step"
@@ -2695,6 +2745,16 @@ files: [
         sha256_sum: "d98d0b08914fc95b680b1f8487cc8e2b17d1e79a0370d684c82bd35ad136a5db"
     },
     {
+        path: "pkg/vision/mocap/parts/lens-filter-clamp-bottom.stl"
+        size: 180184
+        sha256_sum: "8a3e0393750d5fe3b0679ad9e745a2e3c0bbf249b280288b2191fa1581b45859"
+    },
+    {
+        path: "pkg/vision/mocap/parts/lens-filter-clamp-top.stl"
+        size: 189984
+        sha256_sum: "f0f929b443535dc43d9055fbd26a6dea08b0276cf84454295f9bef6a8c0ec55a"
+    },
+    {
         path: "pkg/vision/mocap/parts/lens-focus-tool-r2.3mf"
         size: 60264
         sha256_sum: "707a51afedc878ae29b5b1df7e4399672c18bcc50004dd6905810dc3ce38ede6"
@@ -2705,19 +2765,24 @@ files: [
         sha256_sum: "e31a544e091118f018526fc3e5476fb601162df689d76e6eb7b3637fa1e88259"
     },
     {
+        path: "pkg/vision/mocap/parts/lens-focus-tool-r3.stl"
+        size: 113684
+        sha256_sum: "b36cae928373e2d0985bbda712924bfbfeef1d801783ec840a725db06cff0bf2"
+    },
+    {
         path: "pkg/vision/mocap/parts/lens-focus-tool.stl"
         size: 96684
         sha256_sum: "0ff8a8ce9c820f22764b4850545092a37fd93b0edc6c214e35f5295fef3ec2f0"
     },
     {
         path: "pkg/vision/mocap/parts/lens-holder-holder-lcp.3mf"
-        size: 143023
-        sha256_sum: "2620666889c4d77b594940719a79fbe20823f7b8eafcd4e8c3c86bb315652a52"
+        size: 114771
+        sha256_sum: "6cc4e63871566d407ad9c35a8fa349e7a3815cb8ff1cda5745eeb566d2603331"
     },
     {
         path: "pkg/vision/mocap/parts/lens-holder-holder-lcp.stl"
-        size: 650084
-        sha256_sum: "540414e0449a35fa80afc4360ed38b21d5c23a9a63530e788499b5732fc9a0c8"
+        size: 479684
+        sha256_sum: "f27adf85bcd7fb9c2e93debaba92f1f1945b030e46c53c0b778592fce04f1b00"
     },
     {
         path: "pkg/vision/mocap/parts/lens-holder-holder.stl"
@@ -2751,13 +2816,13 @@ files: [
     },
     {
         path: "pkg/vision/mocap/parts/rgb-led-diffuser.3mf"
-        size: 54137
-        sha256_sum: "6787d2723468b327dc408df35e0b62a294bfc3b05c04619d449744bc90252c30"
+        size: 106220
+        sha256_sum: "605a64c4a59afa022ad763b0d0b826bbed41410a425b264e246d998f6e7a522b"
     },
     {
         path: "pkg/vision/mocap/parts/rgb-led-diffuser.stl"
-        size: 86084
-        sha256_sum: "4c3e26d9bc1a87f103d4877bbc978f7a33093b28b3df58d90c02719be4b2756b"
+        size: 104084
+        sha256_sum: "be58ae4a83a12d5f800fc81fe207805caf8ee99a4c20fd5f4e0f82eea9f9ab33"
     },
     {
         path: "pkg/vision/mocap/parts/rigid-body-disk.dxf"
@@ -2775,14 +2840,29 @@ files: [
         sha256_sum: "649cc2f7413c48104cf13a3dd4bfcf413413fe484ebb459ac31c13ce53fa7046"
     },
     {
+        path: "pkg/vision/mocap/parts/stencil-pcb-holder.3mf"
+        size: 95118
+        sha256_sum: "6b1eba5327ad31d57d97b29f4854723cca01c415c4122592c457beae31948fe5"
+    },
+    {
+        path: "pkg/vision/mocap/parts/stencil-pcb-holder.stl"
+        size: 295884
+        sha256_sum: "6ca21f52cdba67ee185e4bb51977a48c02387dcd3708dd903ea2cddcc9ad69f4"
+    },
+    {
         path: "pkg/vision/mocap/parts/thread-milling-testing.stl"
         size: 102384
         sha256_sum: "a7d08cdb7767821d0dbd73fbff04438ad57302a52de4e6e6e86c801f6e5d689f"
     },
     {
-        path: "pkg/vision/mocap/parts/tripod-holder.stl"
+        path: "pkg/vision/mocap/parts/tripod-holder-r1.stl"
         size: 31284
         sha256_sum: "53abfd98fbdf237dc2476361025f474b9bf90d3ebc52a5d736aca3f2a1d7c016"
+    },
+    {
+        path: "pkg/vision/mocap/parts/tripod-holder-r2.stl"
+        size: 31284
+        sha256_sum: "ec107655d8c9343438e933b2cb7e996964e21dbb8f216ebcce24b7a29927ecfa"
     },
     {
         path: "pkg/vision/mocap/parts/wall-clip-alignment-helper.dxf"

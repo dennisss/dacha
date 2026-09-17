@@ -22,6 +22,9 @@ executor_multitask = { path = "../executor/multitask", optional = true }
 file = { path = "../file", optional = true }
 base_radix = { path = "../base/radix", optional = true }
 
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { workspace = true }  
+
 [dev-dependencies]
 openssl = { path = "../../third_party/openssl" }
 

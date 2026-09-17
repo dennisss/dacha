@@ -54,10 +54,14 @@ fn main() {
 
     std::fs::write(output_dir.join("register_assets.rs"), out).unwrap();
 
-    #[cfg(windows)]
-    {
-        let mut res = embed_resource::Resource::new();
-        res.set_icon(project_dir.join("out/mocap_app/icons/icon.ico").to_str().unwrap());
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    if target_os == "windows" {
+        let icon_path = project_dir.join("out/mocap_app/icons/icon.ico");
+
+        let mut res = winresource::WindowsResource::new();
+        res.set("FileDescription", "Mocap"); 
+        res.set("ProductName", "Mocap");
+        res.set_icon(icon_path.as_str());
         res.compile().unwrap();
     }
 }

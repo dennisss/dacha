@@ -2,14 +2,6 @@
 
 /*
 
-mkdir dump/ar0234-pnp
-
-cargo run --bin openpnp -- \
-    --board_path=pkg/media/camera/boards/camera_ar0234/r1/board-latest.kicad_pcb \
-    --config_path=pkg/media/camera/boards/camera_ar0234/placement.txtpb \
-    --output_dir=dump/ar0234-pnp
-
-
 TODO: Tape advance pitch?
 */
 
@@ -173,8 +165,10 @@ async fn main() -> Result<()> {
 
         let mut selected_part = None;
         for part in config.parts() {
+            assert!(!part.board_ref().value().is_empty());
+            
             if part.board_ref().package() == component.package &&
-                part.board_ref().value() == component.value {
+                part.board_ref().value().contains(&component.value) {
                 selected_part = Some(part);
                 break;
             }
@@ -182,7 +176,23 @@ async fn main() -> Result<()> {
 
         let part = match selected_part {
             Some(v) => v,
-            None => continue
+            None => {
+                println!("# Missing component: {:?}", component);
+                println!(
+r#"
+    {{
+        name: ""
+        source: ""
+        height: 0
+        board_ref {{
+            value: "{}"
+            package: "{}"
+        }}
+    }},
+"#, component.value, component.package);
+
+                continue
+            }
         };
 
         if packages_defined.insert(component.package.to_string()) {
@@ -193,9 +203,9 @@ async fn main() -> Result<()> {
             parts_xml.push_str(&make_part(part));
         }
 
-        let side = match component.side.as_str() {
-            "top" => "Top",
-            "bottom" => "Bottom",
+        let (side, is_bottom) = match component.side.as_str() {
+            "top" => ("Top", false),
+            "bottom" => ("Bottom", true),
             _ => return Err(format_err!("Unknown side: {}", component.side))
         };
 
@@ -204,6 +214,14 @@ async fn main() -> Result<()> {
                 "Fiducial"
             } else {
                 "Placement"
+            }
+        };
+
+        let rotation = {
+            if is_bottom {
+                (180.0 - component.rotation) % 360.0
+            } else {
+                component.rotation
             }
         };
 
@@ -216,7 +234,7 @@ async fn main() -> Result<()> {
             "#,
             x = component.pos_x,
             y = component.pos_y,
-            rotation = component.rotation,
+            rotation = rotation + part.rotation_offset(),
             side = side,
             id = component.reference,
             part_id = part.name(),
