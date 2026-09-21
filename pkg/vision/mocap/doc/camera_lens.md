@@ -66,6 +66,7 @@ These are the best and the best components you can get for roughly the same pric
 
 - Lens
     - [3.9mm focal length](https://www.digikey.com/en/products/detail/edatec/ED-LENS-M12-230390-08/25659396) normal FOV
+        - When focused on an AR0234, the distance from the top of the camera PCB to the top edge of the black lens shroud is ~21.6mm
     - [2.7mm focal length](https://www.digikey.com/en/products/detail/edatec/ED-LENS-M12-230270-08/25659394) wide FOV
     - These are good because they have very low distortion and are high resolution (MTF wise)
     - They don't come with any filters

@@ -226,12 +226,12 @@ Note that I got all the M3 and M4 heatset inserts from CNC Kitchen.
 
 The backplane is composed of individual blades that connect 3 or 4 SAS drives to 1 Mini SAS HD connector going to the SAS expander. In total the enclosure will 3 rows of blades with each row having 1 x 3-drive blade and 3 x 4-drive blades. This is in contrast to enclosures like the HL15 which uses a single PCB for an entire row: the single PCB approach makes alignment easier but is more annoying to solder and more expensive if replacing an individual component.
 
-The latest stable board design is in the `boards/backplane-r2` folder.
+The latest stable board design is in the `boards/backplane-r3` folder.
 
-Pre-exported production files are located here (download both as `.zip` files):
+Pre-exported production files are located here:
 
-- https://storage.googleapis.com/da-sources/sha256/997430bd59564e8fb671e5ee1241b263c594608e8afde709ecd4b5834af568be
-- https://storage.googleapis.com/da-sources/sha256/973f699f585c04ecb686cd4979749b07df52c551a60728020d31dc800b225064
+- [plot-3disk.zip](https://dacha.dev/pkg/cluster/machines/jbod/boards/backplane/r3/plot-3disk.zip)
+- [plot-4disk.zip](https://dacha.dev/pkg/cluster/machines/jbod/boards/backplane/r3/plot-4disk.zip)
 
 You need to order at least 3 of the 3-disk version and 9 of the 4-disk version.
 
@@ -263,7 +263,11 @@ Other components:
         - https://www.digikey.com/en/products/detail/molex/0430300040/11503719?s=N4IgTCBcDaICwGYAMylLkkBdAvkA
 
 - SAS Drive Connector
-    - https://www.digikey.com/en/products/detail/molex/0878390018/5116557
+    - Note that the PCB footprint is standardized so multiple manufacturers sell the same part.
+    - Used in R3 PCBs
+        - https://www.digikey.com/en/products/detail/amphenol-icc-fci/10120818-001C-TRLF/4416656
+    - Used in R1-R2 PCBs (obsolete)
+        - https://www.digikey.com/en/products/detail/molex/0878390018/5116557
 
 - SAS Data Connector
     - SFF-8643 (Mini SAS HD)

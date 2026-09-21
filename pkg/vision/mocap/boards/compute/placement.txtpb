@@ -1,0 +1,293 @@
+# TODO: Re-check the 40pin connector height (physically measure it in the center).
+
+parts: [
+    {
+        name: "Fiducial"
+        fiducial: true
+        board_ref {
+            value: "Fiducial"
+            package: "Fiducial_1mm_Mask2mm"
+        }
+    },
+
+    # Bottom
+
+    {
+        name: "CD-HD201"
+        source: "https://www.digikey.com/en/products/detail/bourns-inc/cd-hd201/6561443"
+        height: 1
+        board_ref {
+            value: "CD-HD201"
+            package: "CD-HD2004"
+        }
+    },
+    {
+        name: "Cap_10uF_0603"
+        source: "https://www.digikey.com/en/products/detail/samsung-electro-mechanics/CL10A106KP8NNNC/3886850"
+        height: 0.8
+        board_ref {
+            value: ["10uF 6.6V", "10uF 6V"]
+            package: "C_0603_1608Metric"
+        }
+    },
+    {
+        name: "Cap_0.1uF_0603_50V"
+        source: "https://www.digikey.com/en/products/detail/murata-electronics/GCM188R71H104KA57J/2591942"
+        height: 0.8
+        board_ref {
+            value: ["0.1uF 6.6V", "0.1uF 10V", "0.1uF 6V", "0.1uF 16V"]
+            package: "C_0603_1608Metric"
+        }
+    },
+    {
+        name: "Cap_1uF_0603"
+        source: "https://www.digikey.com/en/products/detail/yageo/CC0603KRX7R7BB105/2833611"
+        height: 0.8
+        board_ref {
+            value: ["1uF 6.6V", "1uF 10V", "1uF 16V"]
+            package: "C_0603_1608Metric"
+        }
+    },
+    {
+        name: "DF40C-100DS-0.4V(51)"
+        source: "https://www.lcsc.com/product-detail/C597931.html"
+        height: 1.45
+        rotation_offset: 90
+        board_ref {
+            value: "MountingHole"
+            package: "CM5Connector"
+        }
+    },
+
+
+    # 24mm tape, 8mm part pitch, 4mm hole pitch. 
+    {
+        name: "FH34SRJ"
+        source: "https://www.lcsc.com/product-detail/C2889325.html"
+        height: 1
+        rotation_offset: 180
+        board_ref {
+            value: "FH34SRJ-22S-0.5SH_50_"
+            package: "HRS_FH34SRJ-22S-0.5SH_50_"
+        }
+    },
+    {
+        name: "TPD4EUSB30"
+        source: "https://www.lcsc.com/product-detail/C90627.html"
+        height: 0.5
+        rotation_offset: 90
+        board_ref {
+            value: "TPD4EUSB30"
+            package: "USON-10_2.5x1.0mm_P0.5mm"
+        }
+    },
+
+
+    # Top
+
+    {
+        name: "Cap_47uF_1210_16V"
+        source: "https://www.digikey.com/en/products/detail/murata-electronics/GRM32EC81C476KE15K/7363053"
+        height: 1.8
+        board_ref {
+            value: "47uF 16V"
+            package: "C_1210_3225Metric"
+        }
+    },
+
+    {
+        name: "Cap_1.5uF_1206_100V"
+        source: "https://www.digikey.com/en/products/detail/tdk/C3216X7S2A155K160AB/3952052"
+        height: 1.6
+        board_ref {
+            value: "1.5uF 100V"
+            package: "C_1206_3216Metric"
+        }
+    },
+
+    {
+        name: "Cap_0.1uF_0805_100V"
+        source: "https://www.digikey.com/en/products/detail/samsung-electro-mechanics/CL21B104KCFNNNE/5961324"
+        height: 1.25
+        board_ref {
+            value: "0.1uF ; 100V"
+            package: "C_0805_2012Metric"
+        }
+    },
+    {
+        name: "BSS-138"
+        source: "https://www.digikey.com/en/products/detail/onsemi/BSS138/244210"
+        height: 1
+        rotation_offset: 180
+        board_ref {
+            value: "BSS138"
+            package: "SOT-23"
+        }
+    },
+
+    {
+        name: "Res_63.4_0603"
+        source: "0.45"
+        height: 0
+        board_ref {
+            value: "63.4 Ohm"
+            package: "R_0603_1608Metric"
+        }
+    },
+
+    {
+        name: "Res_24.9K_0603"
+        source: ""
+        height: 0.45
+        board_ref {
+            value: "24.9K +/- 1%"
+            package: "R_0603_1608Metric"
+        }
+    },
+
+    {
+        name: "Res_249K_0.1%_0603"
+        source: ""
+        height: 0.45
+        board_ref {
+            value: "249K +/- 0.1%"
+            package: "R_0603_1608Metric"
+        }
+    },
+
+    {
+        name: "Res_150K_0603"
+        source: ""
+        height: 0.45
+        board_ref {
+            value: "150K"
+            package: "R_0603_1608Metric"
+        }
+    },
+
+    {
+        name: "Res_10K_0.1%_0603"
+        source: ""
+        height: 0.45
+        board_ref {
+            value: "10K +/- 0.1%"
+            package: "R_0603_1608Metric"
+        }
+    },
+
+    {
+        name: "Res_1K_0603"
+        source: ""
+        height: 0.45
+        board_ref {
+            value: "1K"
+            package: "R_0603_1608Metric"
+        }
+    },
+
+    {
+        name: "Res_220_0603"
+        source: ""
+        height: 0.45
+        board_ref {
+            value: "220"
+            package: "R_0603_1608Metric"
+        }
+    },
+
+    {
+        name: "Res_10K_0603"
+        source: ""
+        height: 0.45
+        board_ref {
+            value: "10K"
+            package: "R_0603_1608Metric"
+        }
+    },
+    {
+        name: "STM32G031G4U6"
+        source: "https://www.digikey.com/en/products/detail/stmicroelectronics/STM32G031G4U6/10326694"
+        height: 0.55
+        rotation_offset: 90
+        board_ref {
+            value: "STM32G031G4Ux"
+            package: "QFN-28_4x4mm_P0.5mm"
+        }
+    },
+
+    {
+        name: "SMAJ58A"
+        source: "https://www.digikey.com/en/products/detail/diodes-incorporated/SMAJ58A-13-F/1934273"
+        height: 2.1
+        rotation_offset: 0
+        board_ref {
+            value: "SMAJ58A"
+            package: "D_SMA"
+        }
+    },
+
+    {
+        name: "1N4148"
+        source: "https://www.digikey.com/en/products/detail/onsemi/1N4148WS/1873805"
+        height: 0.7
+        rotation_offset: 0
+        board_ref {
+            value: "1N4148"
+            package: "D_SOD-323"
+        }
+    },
+
+    {
+        name: "TPS2378DDAR"
+        source: "https://www.digikey.com/en/products/detail/texas-instruments/TPS2378DDAR/3431161"
+        height: 1.7
+        rotation_offset: -90
+        board_ref {
+            value: "TPS2378DDAR"
+            package: "VREG_LM5017MR_NOPB"
+        }
+    },
+
+    {
+        name: "LM65645RZTR"
+        source: ""
+        height: 0.6
+        rotation_offset: -90
+        board_ref {
+            value: "LM65645RZTR"
+            package: "RZT0020A-MFG"
+        }
+    },
+    {
+        name: "LIS2DW12TR"
+        source: ""
+        height: 0.7
+        rotation_offset: 0
+        board_ref {
+            value: "LIS2DW12TR"
+            package: "LGA-12_2x2mm_P0.5mm"
+        }
+    },
+
+    {
+        name: "RT9742GGJ5"
+        source: "https://www.digikey.com/en/products/detail/richtek-usa-inc/rt9742ggj5/5880519"
+        height: 1
+        rotation_offset: 180
+        board_ref {
+            value: "RT9742GGJ5"
+            package: "SOT-23-5"
+        }
+    },
+
+    {
+        name: "ECS-TXO-3225MV-240"
+        source: ""
+        height: 1
+        rotation_offset: -90
+        board_ref {
+            value: "ASTX-H11-24.000MHZ-T"
+            package: "XTAL_ASTX-H11-24.000MHZ-T"
+        }
+    }
+]

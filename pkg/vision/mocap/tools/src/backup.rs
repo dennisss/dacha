@@ -49,7 +49,7 @@ impl BackupCommand {
 
             println!("Hardware Config: {:?}", status.hardware_config());
 
-            file::write(output_dir.join("hardware_config.pb"), &status.hardware_config().serialize()?);
+            file::write(output_dir.join("hardware_config.pb"), &status.hardware_config().serialize()?).await?;
         }
 
         Ok(())

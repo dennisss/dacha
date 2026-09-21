@@ -1085,6 +1085,16 @@ files: [
         sha256_sum: "7f45cb0fd2608da9fc7bc2b431678f1d6d3dfa5eaeba2c7eba92779b356c1947"
     },
     {
+        path: "pkg/cluster/machines/jbod/boards/backplane/r3/plot-3disk.zip"
+        size: 106121
+        sha256_sum: "5f32a674df3679ec1db127f680273f9dbf5fe9f2db70f5304697ac51395ff25a"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/boards/backplane/r3/plot-4disk.zip"
+        size: 129590
+        sha256_sum: "ec56347471868706b74c9457d9eadd51d7f06b1b3b5663b0235b8f252bb9d79c"
+    },
+    {
         path: "pkg/cluster/machines/jbod/parts/backplane-back-left-panel.stl"
         size: 83484
         sha256_sum: "d22ea71655c3ea65eb21f6f47192c12501b5d51a511de8ac667daed3ba48a755"

@@ -172,7 +172,7 @@ async fn main() -> Result<()> {
                         return Err(err_msg("Multiple symbol paths in directory"));
                     }
 
-                    sym_path = Some(path.normalized());
+                    sym_path = Some(path.normalize_lexically().unwrap());
                 }
                 "kicad_mod" => {
                     if let Some(p) = fp_path.clone() {
