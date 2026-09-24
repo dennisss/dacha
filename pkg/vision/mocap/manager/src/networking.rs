@@ -250,7 +250,7 @@ impl CameraResolver {
                         .ok_or_else(|| err_msg("Invalid NetworkManager output"))?;
                     
                     if dev == iface_name {
-                        return Err(format_err!("Interface '{}' is already configured under connection '{}'. Waiting to get an IP...", iface_name, dev));
+                        return Err(format_err!("Interface '{}' is already configured under connection '{}'. Waiting to get an IP...", iface_name, name));
                     }
                 }
 

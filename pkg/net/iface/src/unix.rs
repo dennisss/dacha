@@ -61,6 +61,7 @@ impl NetworkInterface {
 
             if item.ifa_addr == core::ptr::null_mut() {
                 out.push((name, None)); 
+                addr = item.ifa_next;
                 continue;
             }
 
