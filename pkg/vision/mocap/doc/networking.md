@@ -62,7 +62,7 @@ On these, link-local IPv4 addresses are automatically assigned when plugging in 
 
 ### Linux
 
-Most mainstream distros do not default to auto-assinging link-local IPv4 addresses (only v6 link local addresses).
+Most mainstream distros do not default to auto-assigning link-local IPv4 addresses (only v6 link local addresses).
 
 The software will instead do the following to setup the network:
 

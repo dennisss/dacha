@@ -42,8 +42,14 @@ The final distributed binaries are built using
 For development, the following two commands can be useful:
 
 ```bash
+# Install node.js dependencies (for the UI)
+npm ci
+
 # Rebuild the UI code (will be enabled when the webview is refreshed)
 cargo run --bin builder -- build //pkg/vision/mocap/manager:app
+
+# Generate icons for the app
+./pkg/vision/mocap/app/build_icons.sh
 
 # Rebuild and run the app (with dev tools enabled so can be live refreshed with UI changes)
 cargo run --bin mocap_app -- --enable_devtools
