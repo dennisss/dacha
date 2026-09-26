@@ -63,6 +63,11 @@ impl TaskEntry {
                     return;
                 }
 
+                if state.yielding {
+                    state.yielding = false;
+                    return;
+                }
+
                 state.parked_thread = Some(std::thread::current());
             }
 

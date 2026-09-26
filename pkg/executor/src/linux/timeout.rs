@@ -16,6 +16,7 @@ use common::tree::binary_heap::*;
 use crate::channel;
 use crate::future::{map, race};
 use crate::linux::executor::{ExecutorShared, TaskId};
+#[cfg(target_os = "linux")]
 use crate::linux::io_uring::ExecutorOperation;
 
 use super::thread_local::CurrentExecutorContext;
@@ -29,6 +30,8 @@ const MAX_SLEEP_PRECISION: Duration = Duration::from_nanos(500_000); // 0.5ms
 /// timeouts as they would take away slots from more interesting IO operations.
 pub(super) struct ExecutorTimeouts {
     shared: Arc<Shared>,
+
+    thread: Option<std::thread::JoinHandle<()>>,
 }
 
 /// Unique identifier for a single timeout. These are never repeated and once a
@@ -94,21 +97,43 @@ impl ExecutorTimeouts {
     pub fn new() -> Self {
         let (sender, receiver) = channel::bounded(1);
 
-        Self {
-            shared: Arc::new(Shared {
-                state: Mutex::new(State {
-                    last_timeout_id: 0,
-                    next_expiration: None,
-                    timeouts_heap: BinaryHeap::<
-                        (Instant, TimeoutId),
-                        OrdComparator,
-                        TimeoutHeapIndex,
-                    >::default(),
-                    shutting_down: false,
-                }),
-                sender,
-                receiver,
+        let shared = Arc::new(Shared {
+            state: Mutex::new(State {
+                last_timeout_id: 0,
+                next_expiration: None,
+                timeouts_heap: BinaryHeap::<
+                    (Instant, TimeoutId),
+                    OrdComparator,
+                    TimeoutHeapIndex,
+                >::default(),
+                shutting_down: false,
             }),
+            sender,
+            receiver,
+        });
+
+        let mut thread = None;
+        let shared2 = shared.clone();
+        // TODO: Only use for non-Linux.
+        thread = Some(std::thread::Builder::new().spawn(move || Self::timeout_waiter_thread(shared2)).unwrap());
+
+        Self {
+            shared,
+            thread
+        }
+    }
+
+    /// Shuts down the timeouts engine.
+    /// All remaining timeouts will return a cancellation error.
+    pub fn shutdown(&self) {
+        let mut state = self.shared.state.lock().unwrap();
+        state.shutting_down = true;
+        drop(state);
+        
+        if let Some(t) = &self.thread {
+            t.thread().unpark()
+        } else {
+            let _ = self.shared.sender.try_send(());
         }
     }
 
@@ -135,13 +160,17 @@ impl ExecutorTimeouts {
 
         if new_op {
             state.next_expiration = Some(now + Self::get_sleep_duration(now, time));
-            if !new_task {
+            
+            if let Some(t) = &self.thread {
+                t.thread().unpark()
+            } else if !new_task {
                 let _ = self.shared.sender.try_send(());
             }
         }
 
-        if new_task {
-            crate::spawn(Self::timeout_waiter_thread(self.shared.clone()));
+        #[cfg(target_os = "linux")]
+        if self.thread.is_none() && new_task {
+            crate::spawn(Self::timeout_waiter_task(self.shared.clone()));
         }
 
         Some(id)
@@ -169,47 +198,74 @@ impl ExecutorTimeouts {
         dur
     }
 
-    async fn timeout_waiter_thread(shared: Arc<Shared>) {
+    /// Gets the earliest time of the next pending timeout.
+    /// This will also wake all completed timeouts.
+    ///
+    /// Will return None if all timeouts have been fulfilled.
+    fn get_next_sleep_time(state: &mut State) -> Option<Duration> {
+        let now = Instant::now();
+
+        let mut next_sleep = None;
+
+        // Pull out all entries that are done now and notify the user.
+        while let Some((min_timeout, min_timeout_id)) = state.timeouts_heap.peek_min() {
+            if *min_timeout > now && !state.shutting_down {
+                // Configure the next sleep time.
+                next_sleep = Some(Self::get_sleep_duration(now, *min_timeout));
+                break;
+            }
+
+            // Timeout has elapsed so clear it and wake the task if needed.
+
+            let entry = state
+                .timeouts_heap
+                .index()
+                .entries
+                .get(min_timeout_id)
+                .unwrap();
+            if let Some(waker) = &entry.waker {
+                waker.wake_by_ref();
+            }
+
+            state.timeouts_heap.extract_min();
+        }
+
+        match next_sleep {
+            Some(v) => {
+                state.next_expiration = Some(now + v);
+                // v
+            }
+            None => {
+                state.next_expiration = None;
+                // break;
+            }
+        }
+
+        next_sleep
+    }
+
+    fn timeout_waiter_thread(shared: Arc<Shared>) {
         loop {
             let next_sleep = {
                 let mut state = shared.state.lock().unwrap();
+                Self::get_next_sleep_time(&mut state)
+            };
 
-                let now = Instant::now();
+            // If there are no timeouts remaining, 
+            let next_sleep = next_sleep.unwrap_or(Duration::from_secs(1));
 
-                let mut next_sleep = None;
+            std::thread::park_timeout(next_sleep);
+        }
+    }
 
-                // Pull out all entries that are done now and notify the user.
-                while let Some((min_timeout, min_timeout_id)) = state.timeouts_heap.peek_min() {
-                    if *min_timeout > now && !state.shutting_down {
-                        // Configure the next sleep time.
-                        next_sleep = Some(Self::get_sleep_duration(now, *min_timeout));
-                        break;
-                    }
-
-                    // Timeout has elapsed so clear it and wake the task if needed.
-
-                    let entry = state
-                        .timeouts_heap
-                        .index()
-                        .entries
-                        .get(min_timeout_id)
-                        .unwrap();
-                    if let Some(waker) = &entry.waker {
-                        waker.wake_by_ref();
-                    }
-
-                    state.timeouts_heap.extract_min();
-                }
-
-                match next_sleep {
-                    Some(v) => {
-                        state.next_expiration = Some(now + v);
-                        v
-                    }
-                    None => {
-                        state.next_expiration = None;
-                        break;
-                    }
+    #[cfg(target_os = "linux")]
+    async fn timeout_waiter_task(shared: Arc<Shared>) {
+        loop {
+            let next_sleep = {
+                let mut state = shared.state.lock().unwrap();
+                match Self::get_next_sleep_time(&mut state) {
+                    Some(v) => v,
+                    None => break
                 }
             };
 
@@ -229,6 +285,7 @@ impl ExecutorTimeouts {
         }
     }
 
+    #[cfg(target_os = "linux")]
     async fn sleep_raw(duration: Duration) -> Result<()> {
         let op = ExecutorOperation::submit(sys::IoUringOp::Timeout { duration }).await?;
         let res = op.wait().await?;
@@ -337,12 +394,12 @@ mod tests {
             f2.await.unwrap();
 
             let t1 = (Instant::now() - start).as_millis() as isize;
-            assert!((t1 - 20).abs() < 5);
+            assert!((t1 - 20).abs() < 5, "timing error: {}", (t1 - 20).abs());
 
             f1.await.unwrap();
 
             let t1 = (Instant::now() - start).as_millis() as isize;
-            assert!((t1 - 200).abs() < 5);
+            assert!((t1 - 200).abs() < 5, "timing error: {}", (t1 - 200).abs());
         })
         .unwrap();
     }
