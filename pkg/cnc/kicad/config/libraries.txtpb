@@ -197,5 +197,65 @@ libraries: [
     },
     {
         path: "third_party/ultralibrarian/wurth_we_xhmi"
+    },
+    {
+        path: "third_party/snapmagic/USB5744_2G"
+    },
+    {
+        path: "third_party/snapmagic/TPS54KB22RZRR"
+    },
+    {
+        path: "third_party/snapmagic/SM3ZS067U310AER1200"
+    },
+    {
+        path: "third_party/snapmagic/2199230_3"
+    },
+    {
+        path: "third_party/ultralibrarian/VSC8574XKS-02"
+    },
+    {
+        path: "third_party/snapmagic/SIM8055_6_1_14_00_A"
+    },
+    {
+        path: "third_party/ultralibrarian/TS3USB221ERSER"
+    },
+    {
+        path: "third_party/snapmagic/AONR21307"
+    },
+    {
+        path: "third_party/snapmagic/TPS56838RPAR"
+    },
+    {
+        path: "third_party/ultralibrarian/SIT5021"
+    },
+    {
+        path: "third_party/ultralibrarian/NCP186AMX250TAG"
+    },
+    {
+        path: "third_party/snapmagic/10120818_001C_TRLF"
+    },
+    {
+        path: "third_party/snapmagic/DS04_254_2_03BK_SMT"
+    },
+    {
+        path: "third_party/snapmagic/GSB4111312HR"
+    },
+    {
+        path: "third_party/m2_card_templates"
+    },
+    {
+        path: "third_party/snapmagic/MS621FE_FL11E"
+    },
+    {
+        path: "third_party/ultralibrarian/LAN9250_ML"
+    },
+    {
+        path: "third_party/snapmagic/BMD_345_A_R"
+    },
+    {
+        path: "third_party/ultralibrarian/REG71050DDCR"
+    },
+    {
+        path: "third_party/ultralibrarian/AG9905-LPB"
     }
 ]

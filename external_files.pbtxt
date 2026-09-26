@@ -3210,6 +3210,16 @@ files: [
         sha256_sum: "2f1ed35d7e65b51a44384fdf644944cfb500bb15120f15fa47c0427e4288a311"
     },
     {
+        path: "third_party/snapmagic/10120818_001C_TRLF/10120818-001C-TRLF.step"
+        size: 1465833
+        sha256_sum: "224f223d09b50b6652c473e598ca272e1be7012b19c1e430f1523517d961647c"
+    },
+    {
+        path: "third_party/snapmagic/2199230_3/2199230-3.step"
+        size: 2012939
+        sha256_sum: "d72b2b22efef2327f8de532306d18c3f63b29f866629b7479f470b7748b2f169"
+    },
+    {
         path: "third_party/snapmagic/530470210/530470210.step"
         size: 137546
         sha256_sum: "25bed1112e8a686cd580662cec43e43ac7e941210068f3964847e96dd7b71db9"
@@ -3218,6 +3228,11 @@ files: [
         path: "third_party/snapmagic/7447709220/WE-PD_1210.step"
         size: 772544
         sha256_sum: "28784f386ab74f38c8ae42c51f2548f53e0f6a785c8ee839a61605dbc044098a"
+    },
+    {
+        path: "third_party/snapmagic/AONR21307/AONR21307.step"
+        size: 368917
+        sha256_sum: "860eaab7219e8ef1b0e49b12d53471d46ec22411d6f1ce11ac11ce33e0694bb5"
     },
     {
         path: "third_party/snapmagic/ASPI_4030S_470M_T/ASPI-4030S-470M-T.step"
@@ -3245,6 +3260,11 @@ files: [
         sha256_sum: "8f59d96eca8975a465c39c89e52d23bbcc3e1a91acc1f1ef1699278de566ee6d"
     },
     {
+        path: "third_party/snapmagic/DS04_254_2_03BK_SMT/DS04-254-2-03BK-SMT.step"
+        size: 939908
+        sha256_sum: "925131fd77ca7c49989fe049c1ce1528356592bc91d497531a45c9f3ba3693c0"
+    },
+    {
         path: "third_party/snapmagic/FH34SRJ-22S-0.5SH_50_/FH34SRJ-22S-0.5SH_50_.step"
         size: 728006
         sha256_sum: "8c76e1957ea59b17ff4061ed55b304b0184072ccc3f0bd24415f01bfaaf5cf8e"
@@ -3260,6 +3280,11 @@ files: [
         sha256_sum: "e786ec9054afa72dd19399f2ee69c76817ec89c6e13e4c5d746943946992d77c"
     },
     {
+        path: "third_party/snapmagic/GSB4111312HR/GSB4111312HR.step"
+        size: 4265151
+        sha256_sum: "ec370035619f6177e1c07fc02da0ea8ea8ae3f758d4d5943ffa46896f5c91297"
+    },
+    {
         path: "third_party/snapmagic/LIS2DH12TR/LIS2DH12TR.step"
         size: 298373
         sha256_sum: "b9d9abf4b6f8d3f6d0cf5589c3b715fabb8b4b328edca3a730d55001a8bf3e9c"
@@ -3273,6 +3298,11 @@ files: [
         path: "third_party/snapmagic/LPJG0926HENL/LPJG0926HENL.step"
         size: 1056640
         sha256_sum: "a88bb5e84cf0d0621da2e22fd41a742d800fe1cd14a14b32cdb73a955f517313"
+    },
+    {
+        path: "third_party/snapmagic/MS621FE_FL11E/MS621FE-FL11E.step"
+        size: 92899
+        sha256_sum: "00bd53c6c912128a4116442d15905fd7c3abdc7eb4b704d3f350ff1ac1edfe25"
     },
     {
         path: "third_party/snapmagic/MSD_1_A/MSD-1-A.step"
@@ -3300,6 +3330,16 @@ files: [
         sha256_sum: "460fc8dc568d63e5ed10e3d0931e749b0707690209a5fc6d2a0c065d37680311"
     },
     {
+        path: "third_party/snapmagic/SIM8055_6_1_14_00_A/SIM8055-6-1-14-00-A.step"
+        size: 2700345
+        sha256_sum: "6be55317de49d7aa73d8e428f4ae1b0651834ec168d183b720939cc3e6363290"
+    },
+    {
+        path: "third_party/snapmagic/SM3ZS067U310AER1200/SM3ZS067U310AER1200.step"
+        size: 4943548
+        sha256_sum: "15470b1c46ee43456c29511718b7326cd36ac19a53034c68fb7febeb9e7d1fe1"
+    },
+    {
         path: "third_party/snapmagic/TPS22922YZPR/TPS22922YZPR.step"
         size: 63456
         sha256_sum: "9c739263cf0f2bd3f5cea34f16f492a8655f0d8619a97e559ef018c853dfa389"
@@ -3315,9 +3355,19 @@ files: [
         sha256_sum: "fde20dcecc228effd5df7e8446fdc02e626c71815136bec151c5b5907b74dfa4"
     },
     {
+        path: "third_party/snapmagic/TPS56838RPAR/TPS56838RPAR.step"
+        size: 311576
+        sha256_sum: "f8f64b5e627e31e819b92c86b568d26d7da82d4e83ecab6ceae7f5f883e4dd3f"
+    },
+    {
         path: "third_party/snapmagic/TPS922055DRRR/TPS922055DRRR.step"
         size: 366225
         sha256_sum: "6d7f156bc0528c8a6a3157009543798779427d4e5194b741361c70fa69322d61"
+    },
+    {
+        path: "third_party/snapmagic/USB5744_2G/USB5744_2G.step"
+        size: 1379610
+        sha256_sum: "25d2309b12cbe98654190ba0ba2668881565697a0b99b177f13b8e0a7dfeaa98"
     },
     {
         path: "third_party/ultralibrarian/475710001/475710001.stp"
@@ -3373,6 +3423,11 @@ files: [
         path: "third_party/ultralibrarian/TPS922054DMTR/DMT0014D.stp"
         size: 421089
         sha256_sum: "9d04f06fa4fb976e9da688775e998b3294770b60051e06547aa6d8f410e44b29"
+    },
+    {
+        path: "third_party/ultralibrarian/TS3USB221ERSER/RSE0010A.stp"
+        size: 183098
+        sha256_sum: "34a8635e1380ed12ec36b6d02d951c2cb058e36c4c1cad51519ea8cf7c02585a"
     },
     {
         path: "third_party/ultralibrarian/molex_microfit_2x2/430450423.stl"

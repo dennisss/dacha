@@ -1,0 +1,1 @@
+Templates derived from https://github.com/timonsku/M.2-Card-Footprints
