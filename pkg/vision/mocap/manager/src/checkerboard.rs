@@ -155,11 +155,9 @@ impl CheckerboardCalibrationMode {
 
     async fn capture_frame_task(
         shared: Arc<Shared>,
-        camera_stub: Arc<CameraStub >,
+        camera_stub: Arc<CameraStub>,
     ) -> Result<()> {
-
-        let grid_width = 8;
-        let grid_height = 13;
+        let config = &shared.config;
 
         let req = ReadFramesRequest::default();
         let ctx = rpc::ClientRequestContext::default();
@@ -177,8 +175,8 @@ impl CheckerboardCalibrationMode {
         let img = Image::<u8>::parse_from(res.mjpeg())?;
 
         let mut options = CheckerboardDetectionOptions::default();
-        options.grid_width = grid_width;
-        options.grid_height = grid_height;
+        options.grid_width = config.grid_width() as usize;
+        options.grid_height = config.grid_height() as usize;
 
         let points_2d = detect_checkboard(&img, &options).await.points;
 

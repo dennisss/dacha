@@ -16,8 +16,8 @@ files: [
     },
     {
         path: "dist/pkg/vision/mocap/app/mocap-linux-x64.tar.gz"
-        size: 13554763
-        sha256_sum: "52877ddaddaec30636dda41ed89ede450a574cc6252df32afb00528143f89626"
+        size: 13554755
+        sha256_sum: "6a899c623a8d645b2a550f7a8605d8505631e16b0101afb5a3810307fe01d5e8"
     },
     {
         path: "dist/pkg/vision/mocap/app/mocap-windows-x64.zip"

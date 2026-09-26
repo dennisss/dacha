@@ -48,6 +48,7 @@ async fn main() -> Result<()> {
     let mut options = CheckerboardDetectionOptions::default();
     options.grid_width = 8;
     options.grid_height = 13;
+    options.output_debug_images = true;
 
     /*
     8 x 13 (40mm spacing)
