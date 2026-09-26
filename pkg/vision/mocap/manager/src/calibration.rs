@@ -19,7 +19,7 @@ use protobuf::{StaticMessage, Message};
 use protobuf_json::MessageJsonSerialize;
 use math::matrix::axis_angle::*;
 use math::matrix::{vec2d, vec3d, Vector2d, Matrix3d, Vector3d, Matrix4d};
-use vision::{CameraIntrinsicsModel, CameraExtrinsics, BundleAdjustmentSolver};
+use vision::{CameraIntrinsicsModel, CameraExtrinsics, BundleAdjustmentSolver, EightPointCameraExtrinsicsSolver};
 use cluster_client::id::{entity_id_from_string, entity_id_to_string};
 use math_proto_util::VectorProtoExt;
 
@@ -179,9 +179,11 @@ impl WandingCalibrationSolver {
 
 
         // Initialize rough camera extrinsics guesses.
-        let mut camera_initial_extrinsics = self.extract_initial_extrinsics(&mut data)?;
+        println!("Extract initial extrinsics...");
+        let (anchor_camera_id, camera_initial_extrinsics) = self.extract_initial_extrinsics_pnp(&mut data)?;
 
-        let mut solution = self.optimize(&data, &camera_initial_extrinsics)?;
+        println!("Optimizing...");
+        let mut solution = self.optimize(&data, anchor_camera_id, &camera_initial_extrinsics)?;
 
         self.align_extrinsics(&mut solution.params)?;
 
@@ -278,13 +280,168 @@ impl WandingCalibrationSolver {
         Ok(out)
     }
 
-    fn extract_initial_extrinsics(
+    fn extract_initial_extrinsics_eight_point(
+        &self, data: &[FrameData]
+    ) -> Result<(u64, HashMap<u64, CameraExtrinsics, FastHasherBuilder>)> {
+
+        let mut correspondences = HashMap::
+            <(u64, u64), EightPointCameraExtrinsicsSolver, FastHasherBuilder>::default();
+
+        for frame in data {
+
+            let mut camera_ids = frame.cameras.keys().cloned().collect::<Vec<u64>>();
+            camera_ids.sort();
+
+            for i in 0..camera_ids.len() {
+                for j in (i + 1)..camera_ids.len() {
+                    let cam_i = frame.cameras.get(&camera_ids[i]).unwrap();
+                    let cam_j = frame.cameras.get(&camera_ids[j]).unwrap();
+
+                    let key = (camera_ids[i], camera_ids[j]);
+                    if !correspondences.contains_key(&key) {
+                        let int_i = self.camera_intrinsics.get(&key.0).unwrap();
+                        let int_j = self.camera_intrinsics.get(&key.1).unwrap();
+                        correspondences.insert(key, EightPointCameraExtrinsicsSolver::new(int_i.clone(), int_j.clone()));
+                    }
+
+                    let out = correspondences.get_mut(&key).unwrap();
+
+                    assert_eq!(&cam_i.points_3d[..], &cam_j.points_3d[..]);
+                    out.add_object(&cam_i.points_3d[..], &cam_i.points_2d[..], &cam_j.points_2d[..]);
+                }
+            }
+        }
+
+        // For the solver on all pairs so that we throw out any bad data.
+        let mut relative_poses = correspondences
+            .into_iter().filter_map(|(key, solver)| {
+                solver.solve().map(|e| (key, e))
+            })
+            .collect::<HashMap<(u64, u64), CameraExtrinsics, FastHasherBuilder>>();
+
+        let mut out = HashMap::<u64, CameraExtrinsics, FastHasherBuilder>::default();
+
+        // Pick the first camera based on which camera connected to the most other cameras.
+        //
+        // (we are basically doing a greedy MST construction)
+        let first_camera_id = {
+            let mut camera_scores = HashMap::<u64, usize, FastHasherBuilder>::default();
+
+            for (cam1, cam2) in relative_poses.keys().cloned() {
+                *camera_scores.entry(cam1).or_default() += 1;
+                *camera_scores.entry(cam2).or_default() += 1;
+            }
+
+            let mut camera_scores = camera_scores.into_iter()
+                .map(|(id, count)| (count, id)).collect::<Vec<(usize, u64)>>();
+
+            camera_scores.sort();
+
+            camera_scores.pop().ok_or_else(|| err_msg("Unable to get any camera transforms"))?.1
+        };
+
+        out.insert(first_camera_id, CameraExtrinsics::default());
+
+        // TODO: Bound by number of cameras.
+        for _ in 0..2000 {
+            // Find a camera for which we correctly have extrinsics to expand next
+            // based on how many connections it has to unsolved cameras.
+            let next_cam_id = {
+                let mut camera_scores = HashMap::<u64, usize, FastHasherBuilder>::default();
+
+                for (cam1, cam2) in relative_poses.keys().cloned() {
+                    if out.contains_key(&cam1) && out.contains_key(&cam2) {
+                        continue;
+                    }
+
+                    if out.contains_key(&cam1) {
+                        *camera_scores.entry(cam1).or_default() += 1;
+                    } else if out.contains_key(&cam2) {
+                        *camera_scores.entry(cam2).or_default() += 1;
+                    }
+                }
+
+                let mut camera_scores = camera_scores.into_iter()
+                    .map(|(id, count)| (count, id)).collect::<Vec<(usize, u64)>>();
+
+                camera_scores.sort();
+
+                match camera_scores.pop() {
+                    Some((_, v)) => v,
+                    None => break
+                }
+            };
+
+            for ((cam_id1, cam_id2), extrinsics) in relative_poses.iter() {
+                let mut cam_id1 = *cam_id1;
+                let mut cam_id2 = *cam_id2;
+                
+                if cam_id1 != next_cam_id && cam_id2 != next_cam_id {
+                    continue;
+                }
+
+
+                let mut inverted = false;
+                if out.contains_key(&cam_id1) && !out.contains_key(&cam_id2) {
+                    // Proceed
+                } else if !out.contains_key(&cam_id1) && out.contains_key(&cam_id2) {
+                    inverted = true;
+                    core::mem::swap(&mut cam_id1, &mut cam_id2);
+                } else {
+                    // Both already present.
+                    continue;
+                }
+
+                let mut rel_extrinsics = extrinsics.to_mat4x4();
+
+                if inverted {
+                    rel_extrinsics = rel_extrinsics.inverse().unwrap();
+                }
+
+                let known_extrinsics = out.get(&cam_id1).unwrap().to_mat4x4();
+
+                let ext = CameraExtrinsics::from_mat4x4(&(
+                    rel_extrinsics * known_extrinsics
+                ));
+
+                out.insert(cam_id2, ext);
+            }
+        }
+
+        println!("Num initial extrinsics: {}", out.len());
+
+        /*
+        let initial_system_state = self.initial_system_state.as_ref()
+            .ok_or_else(|| err_msg("Missing initial system status"))?;
+
+        for cam in initial_system_state.cameras() {
+            if !out.contains_key(&cam.id()) {
+                eprintln!("Missing camera: {} ({:?})", cam.id(), entity_id_to_string(cam.id()));
+            }
+        }
+
+        let num_cameras = initial_system_state.cameras().len();
+
+        // TODO: Also verify no unknown cameras are present in the data but not in the initial set.
+        if out.len() != num_cameras {
+            return Err(err_msg("Not all cameras are linked by some frame chain."));
+        }
+        */
+
+        Ok((first_camera_id, out))
+    }
+
+    /// Old way using just wand pose data
+    /// (this is very sensitive to noise)
+    fn extract_initial_extrinsics_pnp(
         &self, data: &mut Vec<FrameData>
-    ) -> Result<HashMap<u64, CameraExtrinsics, FastHasherBuilder>> {
+    ) -> Result<(u64, HashMap<u64, CameraExtrinsics, FastHasherBuilder>)> {
         let mut camera_initial_extrinsics = HashMap::<u64, CameraExtrinsics, FastHasherBuilder>::default();
 
         data.sort_by_key(|v| v.cameras.len());
         data.reverse();
+
+        let mut anchor_camera_id = None;
 
         // Init with extrinsics from first entry (the one)
         println!("Best frame spans {} cameras", data[0].cameras.len());
@@ -293,6 +450,8 @@ impl WandingCalibrationSolver {
                 rotation: cam.pattern.rotation.clone(),
                 translation: cam.pattern.translation.clone(),
             };
+
+            anchor_camera_id = Some(*id);
 
             camera_initial_extrinsics.insert(*id, extrinsics);
         }
@@ -362,6 +521,7 @@ impl WandingCalibrationSolver {
 
         println!("Num initial extrinsics: {}", camera_initial_extrinsics.len());
 
+        /*
         let initial_system_state = self.initial_system_state.as_ref()
             .ok_or_else(|| err_msg("Missing initial system status"))?;
 
@@ -377,14 +537,20 @@ impl WandingCalibrationSolver {
         if camera_initial_extrinsics.len() != num_cameras {
             return Err(err_msg("Not all cameras are linked by some frame chain."));
         }
+        */
 
-        Ok(camera_initial_extrinsics)
+        Ok((anchor_camera_id.unwrap(), camera_initial_extrinsics))
     }
 
 
+    /// 'anchor_camera_id' is the camera that we will assume has 'zero' extrinsics and
+    ///    is locked in space to reduce the number of parameters we need to optimize.
+    ///    This means that this camera must be well connected to other cameras in the
+    ///    data to avoid massive pivotting around this camera.
     fn optimize(
         &self,
         data: &[FrameData],
+        anchor_camera_id: u64,
         camera_initial_extrinsics: &HashMap<u64, CameraExtrinsics, FastHasherBuilder>,
     ) -> Result<WandingCalibrationSolution> {
         // TODO: Use something like a Huber/Cauchy loss to reduce sensitivity to outliers if we
@@ -401,41 +567,99 @@ impl WandingCalibrationSolver {
                 self.camera_intrinsics.get(id).unwrap(),
                 &extrinsics.rotation,
                 &extrinsics.translation,
-                fixed,
+                *id == anchor_camera_id,
             );
+            // TODO: If we know that initial intrinsics were calibrated from this camera
+            // without modifications, contrain how much the intrinsics are allowed to change.
+            // solver.freeze_camera_intrinsics(idx);
 
             camera_id_to_index.insert(*id, idx);
         }
 
         for entry in data {
 
-            // Init object based on first camera
+            let mut object_translation = Vector3d::zero();
+            let mut object_rotation = Vector3d::zero();
+            {
+                let mut first = true;
+
+                for (cam_id, cam_data) in entry.cameras.iter() {
+                    let (cam_id, cam_data) = entry.cameras.iter().next().unwrap();
+
+                    let cam_idx = camera_id_to_index.get(cam_id).unwrap();
+
+                    // estimated_transform = initial_camera_transform * object_transform
+                    // ^ Need to solve for object_transform;
+
+                    let initial_camera_transform = camera_initial_extrinsics.get(cam_id).unwrap()
+                        .to_mat4x4();
+
+                    let estimated_transform = CameraExtrinsics {
+                        rotation: cam_data.pattern.rotation.clone(),
+                        translation: cam_data.pattern.translation.clone(),
+                    }.to_mat4x4();
+
+                    // println!("BBB: {:?}", estimated_transform);
+                    
+                    let object_transform = initial_camera_transform.inverse().unwrap() * estimated_transform;
+
+                    // println!("OBJ TRANSFORM: {:?}", object_transform);
+
+                    let extrinsics = CameraExtrinsics::from_mat4x4(&object_transform);
+
+
+                    if first {
+                        first = false;
+                        object_translation = extrinsics.translation;
+                        object_rotation = extrinsics.rotation;
+                    }
+                }
+
+                // object_translation /= (entry.cameras.len() as f64);
+
+
+                /*
+                let mut solver = BundleAdjustmentSolver::new();
+
+                let object_idx = solver.add_object(
+                    &object_rotation,
+                    &object_translation
+                );
+
+                for (cam_id, cam_data) in &entry.cameras {
+                    let cam_idx = solver.add_camera(
+                        self.camera_intrinsics.get(cam_id).unwrap(),
+                        &camera_initial_extrinsics.get(cam_id).unwrap().rotation,
+                        &camera_initial_extrinsics.get(cam_id).unwrap().translation,
+                        true,
+                    );
+                    solver.freeze_camera_intrinsics(cam_idx);
+
+                    for i in 0..cam_data.points_2d.len() {
+                        let point_2d = &cam_data.points_2d[i];
+                        let point_3d = &cam_data.points_3d[i];
+
+                        solver.add_object_point_view(
+                            object_idx,
+                            cam_idx,
+                            point_2d,
+                            point_3d
+                        );
+                    }
+                }
+
+                let sol = solver.solve();
+
+                let obj_ext = sol.object_extrinsics(object_idx);
+
+                object_rotation = obj_ext.rotation;
+                object_translation = obj_ext.translation;
+                */
+
+            }
+
+
             let object_idx = {
-                let (cam_id, cam_data) = entry.cameras.iter().next().unwrap();
-                let cam_idx = camera_id_to_index.get(cam_id).unwrap();
-
-                // estimated_transform = initial_camera_transform * object_transform
-                // ^ Need to solve for object_transform;
-
-                let initial_camera_transform = camera_initial_extrinsics.get(cam_id).unwrap()
-                    .to_mat4x4();
-
-                // println!("AA: {:?}", initial_camera_transform);
-
-
-                let estimated_transform = CameraExtrinsics {
-                    rotation: cam_data.pattern.rotation.clone(),
-                    translation: cam_data.pattern.translation.clone(),
-                }.to_mat4x4();
-
-                // println!("BBB: {:?}", estimated_transform);
-                
-                let object_transform = initial_camera_transform.inverse().unwrap() * estimated_transform;
-
-                // println!("OBJ TRANSFORM: {:?}", object_transform);
-
-                let (object_rotation, object_translation) = extrinsics_from_mat4x4(&object_transform);
-
                 solver.add_object(
                     &object_rotation,
                     &object_translation
@@ -464,9 +688,13 @@ impl WandingCalibrationSolver {
 
         solver.enable_logging();
 
+        let start = Instant::now();
+
         let solution = solver.solve();
 
-        println!("Solved!");
+        let end = Instant::now();
+
+        println!("Solved in {:?}!", end - start);
 
         let mut out = WandingCalibrationSolution {
             error: solution.error(),
