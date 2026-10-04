@@ -1,6 +1,8 @@
 
 # Config for OpenPNP Assembly.
 
+# TODO: Need to double check all the rotation offsets.
+
 parts: [
     {
         name: "Fiducial"
@@ -10,6 +12,9 @@ parts: [
             package: "Fiducial_1mm_Mask2mm"
         }
     },
+
+    # Top side
+
     {
         name: "WS2812B-2020"
         source: ""
@@ -26,10 +31,148 @@ parts: [
         name: "LED_SFH_4715AS_A01"
         source: ""
         height: 2.29
-        rotation_offset: 90
+        rotation_offset: -90
         board_ref {
             value: "SFH_4715AS_A01"
             package: "LED_SFH_4715AS_A01"
+        }
+    },
+
+    # Bottom side
+
+    {
+        name: "Res_0.1_1206"
+        source: "https://www.digikey.com/en/products/detail/bourns-inc/CRM1206-FX-R100ELF/3593160"
+        height: 0.55
+        board_ref {
+            value: "100m 1% 1/2W"
+            package: "R_1206_3216Metric"
+        }
+    },
+    # 12mm tape, 4mm pitch
+    {
+        name: "Cap_2.2uF_JLead_100V"
+        source: "https://www.digikey.com/en/products/detail/murata-electronics/KRM31KR72A225KH01K/4421933"
+        height: 2.9
+        board_ref {
+            value: "2.2uF ; 100V ; J-Lead"
+            package: "C_1206_3216Metric"
+        }
+    },
+    {
+        name: "Res_28K_0603"
+        source: "https://www.digikey.com/en/products/detail/yageo/RC0603FR-0728KL/727108"
+        height: 0.45
+        board_ref {
+            value: "28k (1%); R_fset"
+            package: "R_0603_1608Metric"
+        }
+    },
+    {
+        name: "Cap_0.01uF_0603_100V_COG"
+        source: "https://www.digikey.com/en/products/detail/murata-electronics/GCM1885C2A103JE02J/27381955"
+        height: 0.8
+        board_ref {
+            value: "0.01uF; 100V; C0G"
+            package: "C_0603_1608Metric"
+        }
+    },
+
+
+    {
+        name: "Cap_1.5uF_1206_100V"
+        source: "https://www.digikey.com/en/products/detail/tdk/C3216X7S2A155K160AB/3952052"
+        height: 1.6
+        board_ref {
+            value: "1.5uF; 100V"
+            package: "C_1206_3216Metric"
+        }
+    },
+    {
+        name: "Cap_1nF_0603_50V_COG"
+        source: "https://www.digikey.com/en/products/detail/murata-electronics/GRM1885C1H102JA01D/586943"
+        height: 0.8
+        board_ref {
+            value: ["1nF; 50V; C_FLT", "1nF; 10V; C_comp"]
+            package: "C_0603_1608Metric"
+        }
+    },
+    {
+        name: "Cap_0.1uF_0603_50V"
+        source: "https://www.digikey.com/en/products/detail/murata-electronics/GCM188R71H104KA57J/2591942"
+        height: 0.8
+        board_ref {
+            value: "0.1uF; 10V"
+            package: "C_0603_1608Metric"
+        }
+    },
+    {
+        name: "Cap_1uF_0603_50V_Soft"
+        source: "https://www.digikey.com/en/products/detail/samsung-electro-mechanics/CL10B105KB9VPJC/20498526"
+        height: 0.9
+        board_ref {
+            value: "1uF; 50V; Soft"
+            package: "C_0603_1608Metric"
+        }
+    },
+    {
+        name: "Res_100_0603"
+        source: "https://www.digikey.com/en/products/detail/yageo/RC0603FR-07100RL/726888"
+        height: 0.45
+        board_ref {
+            value: ["100; R_COMP", "100; R_FLT"]
+            package: "R_0603_1608Metric"
+        }
+    },
+    {
+        name: "Res_33.2K_0603"
+        source: "https://www.digikey.com/en/products/detail/yageo/RC0603FR-1333K2L/14286664"
+        height: 0.45
+        board_ref {
+            value: "33.2k"
+            package: "R_0603_1608Metric"
+        }
+    },
+    {
+        name: "Res_10K_0603"
+        source: "https://www.digikey.com/en/products/detail/yageo/RC0603FR-0710KL/726880"
+        height: 0.45
+        board_ref {
+            value: "10K"
+            package: "R_0603_1608Metric"
+        }
+    },
+    # 12mm tape, 8mm pitch
+    {
+        name: "TPS922055DMTR"
+        source: "https://www.digikey.com/en/products/detail/texas-instruments/TPS922055DMTR/22106788"
+        height: 0.8
+        rotation_offset: -90
+        board_ref {
+            value: "TPS922055DMTR"
+            package: "VSON14_DMT_TEX"
+        }
+    },
+    # 12mm tape 8mm pitch
+    {
+        name: "TPS26625DRCR"
+        source: "https://www.digikey.com/en/products/detail/texas-instruments/tps26625drcr/9692673"
+        height: 0.8
+        rotation_offset: 0
+        board_ref {
+            value: "TPS26625DRCR"
+            package: "IC_TPS26625DRCR"
+        }
+    },
+    # 12mm tape, 8mm pitch
+    {
+        name: "V8PM10S-M3/I"
+        source: "https://www.digikey.com/en/products/detail/vishay-general-semiconductor-diodes-division/V8PM10S-M3-I/7427124"
+        height: 1
+        rotation_offset: -90
+        board_ref {
+            value: "V8PM10S-M3/I"
+            package: "TO-277A"
         }
     }
 ]

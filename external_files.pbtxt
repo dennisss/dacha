@@ -2045,6 +2045,11 @@ files: [
         sha256_sum: "9bad132fd10660f3184592a2e27c33a83548176ac2912fcb4a37eb8bd9feccd7"
     },
     {
+        path: "pkg/media/camera/boards/camera_ar0234/r3/plot.zip"
+        size: 83672
+        sha256_sum: "a517e129134b72fdc522769c9f50d16b8608ce28b9332cae52b63e4710c5b454"
+    },
+    {
         path: "pkg/media/camera/boards/camera_ffc/latest/plot.zip"
         size: 3523
         sha256_sum: "b8e65d42be942bd0f2cbfd6f380c8f9321452fa855245f79f8fa278f281b1a10"
@@ -2053,6 +2058,11 @@ files: [
         path: "pkg/media/camera/boards/camera_mira220/r1/plot.zip"
         size: 86932
         sha256_sum: "7a7d72f303b429e487008a9cef5d04497a82647ef1f1b0ff4ee24a65d001fb5a"
+    },
+    {
+        path: "pkg/media/camera/boards/camera_vb5943/r1/plot.zip"
+        size: 89797
+        sha256_sum: "6426335ed706257d073ab59a4470a6448ede5cd8dade70304e4c332f18b8b876"
     },
     {
         path: "pkg/media/thermal/doc/thermal_master_p2/tripod_mount/images/image-1.jpg"
@@ -2073,6 +2083,16 @@ files: [
         path: "pkg/media/thermal/doc/thermal_master_p2/tripod_mount/tripod-mount-lid.stl"
         size: 191084
         sha256_sum: "1cc29b1e66cabfae5d4455997f750184e64c04beb2f6db313c85848f63ee71a2"
+    },
+    {
+        path: "pkg/net/router/boards/m2_gps/r1/plot.zip"
+        size: 48470
+        sha256_sum: "d7efdd74bd5c79af18577edf5be50b57988de72ba6279c288859d3377cc1e491"
+    },
+    {
+        path: "pkg/net/router/boards/m2_radio/r1/plot.zip"
+        size: 59302
+        sha256_sum: "fbfa8b91fd58563dadd81ea3f454632e8891e3b0e3b503d21f13f1f71ad03861"
     },
     {
         path: "pkg/peripherals/boards/tc2030_adapter/board/plot/board-B_Cu.gbl"
@@ -2528,6 +2548,11 @@ files: [
         path: "pkg/vision/mocap/boards/legacy/pi_mocap/board-r1/plot/board-latest-PTH.drl"
         size: 1966
         sha256_sum: "e35bb18cdefa7cd3f3ece14a4777ea1cb0e52d36782359a7b93d88c40a828429"
+    },
+    {
+        path: "pkg/vision/mocap/boards/radio/r1/plot.zip"
+        size: 85527
+        sha256_sum: "484c2140205d4b58e964bdbf2dde24fe13d0a3db490dbe1dddf5fdcf0de3bef4"
     },
     {
         path: "pkg/vision/mocap/parts/board-standoff.stl"

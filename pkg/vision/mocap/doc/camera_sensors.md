@@ -106,6 +106,17 @@ Roughly the same as the AR0234 but harder to get.
         - Pull down `Strobe-` to GND
         - `Strobe-` will be driven high during the strobe.
 
+**VB5943**
+
+- Sold on DigiKey : https://www.digikey.com/en/products/detail/stmicroelectronics/VB5943CAJX-1/29828718
+- 4 lane CSI
+- Format: 1/2.6"
+- 2.25um pixels
+- 2560 x 1984 (5.1 megapixel) 100 FPS
+    - 1920 x 1080 cropped @ 180 FPS
+    - Around 124FPS in the same sensor area as the AR0234
+    - Note: 2x2 and 4x4 Subsampling is supported but it doesn't bin (average), it just reads fewer pixels.
+
 **Mira220**
 
 - Format: 1/2.7"

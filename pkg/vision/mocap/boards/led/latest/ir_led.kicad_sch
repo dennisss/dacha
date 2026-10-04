@@ -2239,6 +2239,18 @@
 		)
 		(uuid 970a9a96-9cf4-47c3-b961-b1dc4d4d423a)
 	)
+	(rectangle
+		(start 165.1 15.24)
+		(end 210.82 68.58)
+		(stroke
+			(width 0)
+			(type dash)
+		)
+		(fill
+			(type none)
+		)
+		(uuid e6584eaf-4921-4da6-b5ec-9aceae24b64d)
+	)
 	(text "** Keep smaller values close to the LED driver IC"
 		(exclude_from_sim no)
 		(at 245.618 67.31 0)
@@ -2301,6 +2313,17 @@
 			(justify left)
 		)
 		(uuid "bd561aea-ff35-4df8-b748-1df1107f3430")
+	)
+	(text "Capacitor Bleed\n\nTry to discharge if unpowered\nfor 1 minute\n\n150K mainly chosen since we also\nuse it on the compute board"
+		(exclude_from_sim no)
+		(at 167.64 25.4 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "cdac74de-ec7f-41ae-a372-8119a5d914e9")
 	)
 	(text "FSET configured for 800kHz switching frequency."
 		(exclude_from_sim no)
@@ -2644,6 +2667,16 @@
 	)
 	(wire
 		(pts
+			(xy 190.5 50.8) (xy 190.5 58.42)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "5bf64271-9bbd-48b9-8133-12cf7d091885")
+	)
+	(wire
+		(pts
 			(xy 260.35 63.5) (xy 260.35 52.07)
 		)
 		(stroke
@@ -2751,6 +2784,16 @@
 			(type default)
 		)
 		(uuid "759793df-7d12-48d4-8563-bc9a95096336")
+	)
+	(wire
+		(pts
+			(xy 190.5 38.1) (xy 190.5 45.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "7962bf4d-f275-4bc1-8d99-b18bbb37861b")
 	)
 	(wire
 		(pts
@@ -2931,6 +2974,16 @@
 			(type default)
 		)
 		(uuid "acbed75b-54d6-4ddc-9ef6-654c9be3bc7f")
+	)
+	(wire
+		(pts
+			(xy 185.42 38.1) (xy 190.5 38.1)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "ad2d3aeb-202c-4af7-9db6-f3b16a2ca82a")
 	)
 	(wire
 		(pts
@@ -3915,6 +3968,28 @@
 		(uuid "c0aa253a-b56a-4073-b436-2c0883452b11")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
 			(at 55.88 154.7804 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+				(hide yes)
+			)
+		)
+	)
+	(global_label "V_LIMITED"
+		(shape input)
+		(at 185.42 38.1 180)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "cb0242db-a1f4-4abd-b0f6-870192ebcdb1")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 173.3029 38.1 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5985,7 +6060,7 @@
 				)
 			)
 		)
-		(property "Value" "1uF; 10V"
+		(property "Value" "1uF; 50V; Soft"
 			(at 31.7563 31.75 90)
 			(effects
 				(font
@@ -6030,6 +6105,73 @@
 			(project "board-latest"
 				(path "/d67f92a0-3cbd-4ffd-b94a-132745dc8102/207e7a44-1eb7-4104-8be0-83f8765f5816"
 					(reference "C4")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R_Small")
+		(at 190.5 48.26 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "64c027d7-9814-444d-8254-557a4de5a275")
+		(property "Reference" "R8"
+			(at 194.31 47.244 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "150K"
+			(at 195.58 49.53 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+			(at 190.5 48.26 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 190.5 48.26 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Resistor, small symbol"
+			(at 190.5 48.26 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "9fc826fd-8e41-4a34-93c5-d946bd4c249d")
+		)
+		(pin "2"
+			(uuid "2112d42c-59c6-462a-91cf-8b4ea89f7f43")
+		)
+		(instances
+			(project "board-latest"
+				(path "/d67f92a0-3cbd-4ffd-b94a-132745dc8102/207e7a44-1eb7-4104-8be0-83f8765f5816"
+					(reference "R8")
 					(unit 1)
 				)
 			)
@@ -7772,8 +7914,8 @@
 		(at 262.89 93.98 0)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
+		(in_bom no)
+		(on_board no)
 		(dnp yes)
 		(fields_autoplaced yes)
 		(uuid "c0350f1d-3684-4587-91ed-32c2b2fdde68")
@@ -8446,6 +8588,72 @@
 			(project "board-latest"
 				(path "/d67f92a0-3cbd-4ffd-b94a-132745dc8102/207e7a44-1eb7-4104-8be0-83f8765f5816"
 					(reference "D16")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 190.5 58.42 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "d5531700-feff-499d-8fcb-a90548b1aea4")
+		(property "Reference" "#PWR06"
+			(at 190.5 64.77 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "GND"
+			(at 190.5 63.5 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 190.5 58.42 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 190.5 58.42 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
+			(at 190.5 58.42 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "f16c0514-423d-424a-be96-7d730c67f358")
+		)
+		(instances
+			(project "board-latest"
+				(path "/d67f92a0-3cbd-4ffd-b94a-132745dc8102/207e7a44-1eb7-4104-8be0-83f8765f5816"
+					(reference "#PWR06")
 					(unit 1)
 				)
 			)
