@@ -55,6 +55,21 @@ cargo run --bin builder -- build //pkg/vision/mocap/manager:app
 cargo run --bin mocap_app -- --enable_devtools
 ```
 
+### Building on Windows
+
+The app can also be built natively on a Windows machine with the following installed (`winget install` package ids are in parenthesis):
+
+- Visual Studio 2022 (or the Build Tools) with the 'Desktop development with C++' workload
+- Git (`Git.Git`), Rustup (`Rustlang.Rustup`), Node.js (`OpenJS.NodeJS.LTS`), ImageMagick (`ImageMagick.ImageMagick`) and LLVM (`LLVM.LLVM`)
+
+The repository must be cloned with `git clone -c core.autocrlf=false` (so that files aren't converted to CRLF line endings). Then the final binary is built using:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File pkg\vision\mocap\app\build_windows.ps1
+```
+
+For development, pass `-AssetsOnly` to the above script to only build the UI code and icons. Afterwards `cargo run --bin mocap_app -- --enable_devtools` works as described above.
+
 ## Design
 
 All the core code for the host software is located in [//pkg/vision/mocap/manager](/pkg/vision/mocap/manager).

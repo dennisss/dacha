@@ -63,7 +63,7 @@ pub fn build_in_directory(input_dir: &LocalPath, output_dir: &LocalPath) -> Resu
         println!("cargo:rerun-if-changed={}", relative_path.display());
 
         // TODO: Only perform '-' to '_' on the base name
-        let mut output_path = output_dir.join(relative_path.as_str().replace("-", "_"));
+        let mut output_path = output_dir.join(relative_path.to_str().unwrap().replace("-", "_"));
         output_path.set_extension("rs");
 
         let compiler = compiler.clone();
@@ -72,7 +72,7 @@ pub fn build_in_directory(input_dir: &LocalPath, output_dir: &LocalPath) -> Resu
 
             let r = compiler.add(input_path.clone(), output_path);
 
-            tracer.trace(input_path.as_str());
+            tracer.trace(input_path.to_str().unwrap());
 
             r
         }));

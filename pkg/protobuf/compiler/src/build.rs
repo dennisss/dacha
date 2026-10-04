@@ -91,7 +91,8 @@ impl PackageTree {
 
                 "#,
                 file_id = file_id.to_ascii_lowercase(),
-                file = file.display()
+                // NOTE: '\' separators (on Windows) would be interpreted as escape sequences.
+                file = file.display().to_string().replace(std::path::MAIN_SEPARATOR, "/")
             ));
         }
     }

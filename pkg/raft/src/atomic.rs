@@ -59,7 +59,7 @@ impl BlobFile {
     // at runtime
     pub async fn builder(path: &LocalPath) -> Result<BlobFileBuilder> {
         let path = path.to_owned();
-        let path_tmp = LocalPathBuf::from(&(path.as_str().to_owned() + ".tmp"));
+        let path_tmp = LocalPathBuf::from(&(path.to_str().unwrap().to_owned() + ".tmp"));
 
         // TODO: Should sync all parent directories of this directory.
         let dir = {
