@@ -370,7 +370,8 @@ impl DescriptorPool {
         let relative_path = relative_path
             .ok_or_else(|| format_err!("Path is not in the protobuf paths: {:?}", path))?;
 
-        return Ok(relative_path.to_str().unwrap().to_string());
+        // NOTE: Proto file names always use '/' separators (even on Windows).
+        return Ok(relative_path.to_str().unwrap().replace(std::path::MAIN_SEPARATOR, "/"));
     }
 
     /// Adds a single binary serialized FileDescriptorProto representing a
