@@ -29,7 +29,7 @@ pub fn build() -> Result<()> {
 
     for input_path in input_paths {
         let relative_path = input_path.strip_prefix(&input_dir).unwrap().to_owned();
-        println!("cargo:rerun-if-changed={}", relative_path.as_str());
+        println!("cargo:rerun-if-changed={}", relative_path.display());
 
         let input_src = std::fs::read_to_string(input_path)?;
 
@@ -50,7 +50,7 @@ pub fn build() -> Result<()> {
         {
             // TODO: This doesn't work with 'cross'
             let res = std::process::Command::new("rustfmt")
-                .arg(output_path.as_str())
+                .arg(&output_path)
                 .output()?;
             if !res.status.success() {
                 std::io::stdout().write_all(&res.stdout).unwrap();

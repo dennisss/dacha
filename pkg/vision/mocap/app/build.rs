@@ -35,7 +35,8 @@ fn main() {
                 file::register_asset("{}", DATA)?;
             }}
             "#,
-            input_path.as_str(),
+            // NOTE: '\' separators (on Windows) would be interpreted as escape sequences.
+            input_path.to_str().unwrap().replace(std::path::MAIN_SEPARATOR, "/"),
             rel_path
         ));
     }
@@ -61,7 +62,7 @@ fn main() {
         let mut res = winresource::WindowsResource::new();
         res.set("FileDescription", "Mocap"); 
         res.set("ProductName", "Mocap");
-        res.set_icon(icon_path.as_str());
+        res.set_icon(icon_path.to_str().unwrap());
         res.compile().unwrap();
     }
 }

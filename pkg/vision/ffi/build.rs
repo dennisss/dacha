@@ -6,10 +6,17 @@ fn main() {
     println!("cargo:rerun-if-changed=src/lm_solver.cc");
     println!("cargo:rerun-if-changed=src/lm_solver.h");
 
+    // On systems without a system wide install of Eigen (e.g. Windows), it is
+    // expected to be in //ext/eigen3 (see pkg/vision/mocap/app/build_windows.ps1).
+    let mut eigen_dir = PathBuf::from("/usr/include/eigen3");
+    if !eigen_dir.exists() {
+        eigen_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("../../../ext/eigen3");
+    }
+
     // 1. The 'cc' crate compiles the C++ into machine code
     cc::Build::new()
         .cpp(true)
-        .include("/usr/include/eigen3") 
+        .include(&eigen_dir)
         .file("src/lm_solver.cc")
         .opt_level(3)
         .flag("-ffast-math")
