@@ -42,6 +42,7 @@ use file::{LocalFile, LocalFileOpenOptions, LocalPath, LocalPathBuf};
 pub struct BlobFile {
     // TODO: Would also be good to know the size of it
     /// Cached open file handle to the directory containing the file
+    #[cfg(target_os = "linux")]
     dir: LocalFile,
 
     /// The path to the main data file this uses
@@ -59,9 +60,10 @@ impl BlobFile {
     // at runtime
     pub async fn builder(path: &LocalPath) -> Result<BlobFileBuilder> {
         let path = path.to_owned();
-        let path_tmp = LocalPathBuf::from(&(path.as_str().to_owned() + ".tmp"));
+        let path_tmp = LocalPathBuf::from(&(path.to_str().unwrap().to_owned() + ".tmp"));
 
         // TODO: Should sync all parent directories of this directory.
+        #[cfg(target_os = "linux")]
         let dir = {
             let path_dir = match path.parent() {
                 Some(p) => p,
@@ -77,6 +79,7 @@ impl BlobFile {
 
         Ok(BlobFileBuilder {
             inner: BlobFile {
+                #[cfg(target_os = "linux")]
                 dir,
                 path,
                 path_tmp,
@@ -109,6 +112,7 @@ impl BlobFile {
 
         // Sync the directory to make it permanent.
         // (TODO: Need to ensure we sync the whole directory chain up to the root of the fs).
+        #[cfg(target_os = "linux")]
         self.dir.sync_data().await?;
 
         Ok(())
