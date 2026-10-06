@@ -1,0 +1,302 @@
+(kicad_sch
+	(version 20250114)
+	(generator "eeschema")
+	(generator_version "9.0")
+	(uuid "f3a0b27b-cf4d-45e0-86a5-873252bb10d7")
+	(paper "A4")
+	(lib_symbols)
+	(sheet
+		(at 86.36 38.1)
+		(size 30.48 12.7)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "134ac33f-6304-4e90-ace0-c7f0cf12fdeb")
+		(property "Sheetname" "kiwi_power"
+			(at 86.36 37.3884 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "kiwi_power.kicad_sch"
+			(at 86.36 51.3846 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "board"
+				(path "/a4f9e44c-b105-4150-8e69-316e5335197c/4fdcefcc-f74b-4d03-ba18-373d15bd5641"
+					(page "14")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 185.42 38.1)
+		(size 32.385 11.43)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "478b397f-e7d8-4664-80fa-f712f0e7d57e")
+		(property "Sheetname" "kiwi_gmii"
+			(at 185.42 37.3884 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "kiwi_gmii.kicad_sch"
+			(at 185.42 50.1146 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "board"
+				(path "/a4f9e44c-b105-4150-8e69-316e5335197c/4fdcefcc-f74b-4d03-ba18-373d15bd5641"
+					(page "8")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 121.92 38.1)
+		(size 20.32 12.7)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "4b17a835-ba10-45c1-b885-68d86568a2a0")
+		(property "Sheetname" "kiwi_wifi"
+			(at 121.92 37.3884 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "kiwi_wifi.kicad_sch"
+			(at 121.92 51.3846 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "board"
+				(path "/a4f9e44c-b105-4150-8e69-316e5335197c/4fdcefcc-f74b-4d03-ba18-373d15bd5641"
+					(page "2")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 150.495 38.1)
+		(size 27.305 12.7)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "7e30f545-97eb-48a3-b94e-d3175b5cb6cc")
+		(property "Sheetname" "kiwi_pcie"
+			(at 150.495 37.3884 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "kiwi_pcie.kicad_sch"
+			(at 150.495 51.3846 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "board"
+				(path "/a4f9e44c-b105-4150-8e69-316e5335197c/4fdcefcc-f74b-4d03-ba18-373d15bd5641"
+					(page "13")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 53.34 78.74)
+		(size 40.64 17.78)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "96e47115-044d-4e65-9c06-2ad4d709b453")
+		(property "Sheetname" "kiwi_i2c_mux"
+			(at 53.34 78.0284 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "kiwi_i2c_mux.kicad_sch"
+			(at 53.34 97.1046 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "board"
+				(path "/a4f9e44c-b105-4150-8e69-316e5335197c/4fdcefcc-f74b-4d03-ba18-373d15bd5641"
+					(page "35")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 111.76 78.74)
+		(size 38.1 15.24)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "cf29d79b-c8d0-4556-a092-3442d30f86ee")
+		(property "Sheetname" "kiwi_serial"
+			(at 111.76 78.0284 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "kiwi_serial.kicad_sch"
+			(at 111.76 94.5646 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "board"
+				(path "/a4f9e44c-b105-4150-8e69-316e5335197c/4fdcefcc-f74b-4d03-ba18-373d15bd5641"
+					(page "36")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 53.975 38.1)
+		(size 27.94 12.7)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "d9d47a2c-f3d2-483d-9d59-02aab6691a07")
+		(property "Sheetname" "kiwi_general"
+			(at 53.975 37.3884 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "kiwi_general.kicad_sch"
+			(at 53.975 51.3846 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "board"
+				(path "/a4f9e44c-b105-4150-8e69-316e5335197c/4fdcefcc-f74b-4d03-ba18-373d15bd5641"
+					(page "6")
+				)
+			)
+		)
+	)
+)

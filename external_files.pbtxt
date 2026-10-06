@@ -3110,6 +3110,11 @@ files: [
         sha256_sum: "b15bcb224575c17c5515fdf7c6a9b0ac3de1f5b485101db31c23b056680e56ac"
     },
     {
+        path: "third_party/8devices/KIW_100_01.step"
+        size: 5838401
+        sha256_sum: "ef198d5fff4e7cfccf3f675a5c5d6187aec481158f4386b5d2008c975c822608"
+    },
+    {
         path: "third_party/blender/bigbuckbunny/BigBuckBunny_320x180.mp4"
         size: 64657027
         sha256_sum: "f78f39603e6774907f2faafabf26a667f4a6fc31769ec304a8a8f7c62d280508"
