@@ -56,6 +56,7 @@ impl<T> AsyncMutex<T> {
         Ok(AsyncMutexPermit { inner: guard })
     }
 
+    #[cfg(feature = "std")]
     pub fn try_lock<'a>(&'a self) -> Result<Option<AsyncMutexPermit<'a, T>>, PoisonError> {
         let guard = match self.inner.try_lock() {
             Some(v) => v,

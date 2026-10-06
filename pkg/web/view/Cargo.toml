@@ -28,3 +28,5 @@ objc2-foundation = { version = "0.3.2", features = ["NSString", "NSURL", "NSURLR
 objc2-app-kit = { version = "0.3.2", features = ["NSApplication", "NSWindow", "NSView", "NSResponder", "NSOpenPanel", "NSSavePanel", "NSGraphics", "NSRunningApplication", "NSPanel", "NSAppearance", "NSAlert", "NSImage", "NSBitmapImageRep"] }
 objc2-web-kit = { version = "0.3.2", features = ["WKWebView", "WKWebViewConfiguration", "WKPreferences", "WKNavigationDelegate", "WKNavigation", "WKURLSchemeHandler", "WKURLSchemeTask", "WKUserContentController", "WKUserScript", "WKScriptMessageHandler", "WKScriptMessage", "WKWebsiteDataStore", "WKHTTPCookieStore", "block2", "objc2-app-kit"] }
 block2 = "0.6.2"
+uuid = { path = "../../uuid" }
+crypto = { path = "../../crypto" }

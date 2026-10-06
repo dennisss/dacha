@@ -18,7 +18,7 @@ pin-project-lite = { workspace = true }
 sys = { path = "../sys" }
 
 [target.'cfg(not(target_os = "linux"))'.dependencies]
-mio = { workspace = true }
+mio = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-sys = { workspace = true }  
@@ -26,4 +26,4 @@ windows-sys = { workspace = true }
 [features]
 default = ["std", "alloc"]
 alloc = ["common/alloc", "base_error/alloc", "base_algorithms/alloc", "peripherals_raw/alloc"]
-std = ["common/std", "base_error/std", "base_algorithms/std", "failure", "peripherals_raw/std", "async-lock", "async-channel"]
+std = ["common/std", "base_error/std", "base_algorithms/std", "failure", "peripherals_raw/std", "async-lock", "async-channel", "mio"]

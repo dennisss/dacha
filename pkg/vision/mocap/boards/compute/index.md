@@ -306,13 +306,10 @@ The recommended way to build the board yourself is as follows:
 
 - Solder bottom side (with compute module connectors)
     - Solder Paste: `GC10 SAC305T4`
-    - DO NOT add attach the inductor (or add solder paste for it). It has very high thermal mass so will make reflowing the other side much harder to do consistently without a long soak time.
 - Solder top side
     - Solder Paste: `NC191LT250`
-- Attach the inductor
-    - Use low temp solder in a synringe like `Chip Quik SMDLTLFP`
-    - Hot air to melt it.
-    - Note: Pin #1 on the inductor should be facing away from the board edge (on the side like the via grid)
+    - Note: Pin #1 on the inductor should be facing away from the board edge (on the side with the via grid)
+    - WARNING: You will need a cutout or standoff in your oven to deal with the inductor to ensure the board lays mostly flat in the oven. Do not add any extra thermal mass like metal standoffs since this will mess up the reflow and probably 
 - Add all the through hole connections desired.
 - Brush/bath with isopropyl alcohol to clean flux residue.
 
@@ -388,3 +385,6 @@ Important tips:
 - `R10`
     - Switching buck convert to FPWM (fixed frequency mode) : Not as good efficiency but much better voltage ripple.
     - Adding some more filtering caps.
+- `R11`
+    - Minor tweaks
+    - Adding test pad for 3.3V power.

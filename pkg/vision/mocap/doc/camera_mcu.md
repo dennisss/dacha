@@ -19,7 +19,7 @@ cargo run --bin source_control -- fetch dist/pkg/vision/mocap/pps_divider.bin
 Or build it from source:
 
 ```bash
-./pkg/vision/mocap/pps_divider/build.sh
+cargo run --bin mocap_deb -- build mcu
 ```
 
 Then plug a camera into the ethernet connected to your computer and wait for it to turn on.

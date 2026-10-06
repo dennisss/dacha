@@ -89,7 +89,11 @@ Note: Only Apple Silicon (M1/M2/... chips) builds are currently distributed.
 
 - Prerequisites
     - None
-- TODO
+- Download [mocap-macos-aarch64.zip](https://dacha.dev/dist/pkg/vision/mocap/app/mocap-macos-aarch64.zip)
+- Extract the file
+- Double click on the "Mocap" app and optionally move it to your applications folder.
+    - Accept the system prompt to allow the software to connect to other devices on your network.
+- Note: Must features are functional in the macOS build but the Grayscale camera previews are currently broken.
 
 
 ### Initial Setup

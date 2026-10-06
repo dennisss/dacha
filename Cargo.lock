@@ -5393,10 +5393,12 @@ dependencies = [
  "base_error",
  "block2",
  "common",
+ "crypto",
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
  "objc2-web-kit",
+ "uuid",
  "webview2-com",
  "windows",
 ]

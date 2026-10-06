@@ -151,9 +151,20 @@ TODOs:
 
 ### Partial Updates
 
-- upload debian
-- `dpkg -i [name].deb`
-    - Need to make sure we have hooks to restart relevant services.
+If you wnat to update just one component of the camera, you can run the following commands:
+
+```bash
+cargo run --bin mocap_deb -- build [component-name]
+# This will update all connected cameras
+cargo run --bin mocap_deb -- update [component-name]
+```
+
+where `component-name` can be one of:
+
+- `camera` for the main camera software
+- `supervisor` for the camera supervisor service
+- `ar0234` for the linux kernel sensor driver (requires restart to take effect)
+- `kernel` for the linux kernel (requires restart to take effect)
 
 ### config.txt / EEPROM Updates
 

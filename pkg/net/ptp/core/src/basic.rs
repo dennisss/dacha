@@ -5,6 +5,7 @@ use common::errors::*;
 use crypto::random::Rng;
 use net::udp::*;
 use net::ip::SocketAddr;
+use net::route::NetworkInterfaceRoute;
 use executor_multitask::{TaskResource, impl_resource_passthrough};
 use executor::sync::AsyncVariable;
 use executor::lock;
@@ -36,11 +37,10 @@ struct ReceivedPacket {
 
 impl BasicTimeNode {
 
-    pub async fn create(bind_addr: SocketAddr, iface_name: &str) -> Result<Self> {
+    pub async fn create(bind_addr: SocketAddr, iface: NetworkInterfaceRoute) -> Result<Self> {
         let mut sock_opts = UdpBindOptions::new();
 
-        sock_opts
-        .bind_to_device(iface_name);
+        sock_opts.route(iface);
 
         let socket = UdpSocket::bind_with_options(
             bind_addr,

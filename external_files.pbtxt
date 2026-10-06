@@ -20,6 +20,11 @@ files: [
         sha256_sum: "6a899c623a8d645b2a550f7a8605d8505631e16b0101afb5a3810307fe01d5e8"
     },
     {
+        path: "dist/pkg/vision/mocap/app/mocap-macos-aarch64.zip"
+        size: 7128336
+        sha256_sum: "02e1074d2985617bae434339cedc72e0cedf6885072fdc8beedc537bdb4c8fab"
+    },
+    {
         path: "dist/pkg/vision/mocap/app/mocap-windows-x64.zip"
         size: 6487673
         sha256_sum: "bcb031bc04e8c4c59be116b0fc9437091c6147d387fb71a43605a7ad62b0640b"

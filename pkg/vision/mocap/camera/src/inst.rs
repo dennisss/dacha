@@ -140,8 +140,12 @@ impl MocapCamera {
             rgb_leds = Some(WS2812SPIController::create("/dev/spidev0.0")?);
         }
 
+        println!("Setup accelerometer...");
+
         let mut i2c_bus = I2CHostController::open(&hardware_config.accelerometer_i2c_device())?;
         let accelerometer = Some(create_accelerometer(i2c_bus.device(0x19)).await?);
+
+        println!("Accelerometer good");
 
         // TODO: Have all key controls like exposure and analog/digital gains exported to a config file that we can re-initialize everything on boot.
         let mut cam = RP1DirectCamera::open().await?;

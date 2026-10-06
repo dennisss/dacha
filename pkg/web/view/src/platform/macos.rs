@@ -331,8 +331,37 @@ pub fn run(mut builder: WebViewBuilder) -> Result<()> {
 
         let _enable_context_menu = builder.enable_context_menu;
         let _devtools = builder.devtools;
-        let config = WKWebViewConfiguration::new();
-        
+
+        let config = WKWebViewConfiguration::new(mtm);
+
+        if let Some(ref data_dir) = builder.user_data_dir {
+            let uuid = {
+                use common::array_ref;
+                use crypto::hasher::Hasher;
+
+                let mut hasher = crypto::sha256::SHA256Hasher::default();
+                hasher.update(data_dir.as_bytes());
+                let hash = hasher.finish();
+
+                let id = uuid::UUID::new(*array_ref![hash, 0, 16]);
+                id.to_string()
+            };
+
+            let uuid_str = NSString::from_str(&uuid);
+            let uuid_alloc: objc2::rc::Allocated<NSUUID> = msg_send_id![NSUUID::class(), alloc];
+            let uuid_ns: objc2::rc::Retained<NSUUID> = msg_send_id![uuid_alloc, initWithUUIDString: &*uuid_str];
+            
+            let cls = WKWebsiteDataStore::class();
+            let sel = objc2::sel!(dataStoreForIdentifier:);
+            let responds: bool = msg_send![cls, respondsToSelector: sel];
+            if !responds {
+                return Err(err_msg("Failed to customize the WKWebsiteDataStore location."));
+            }
+
+            let data_store: *mut objc2::runtime::AnyObject = msg_send![cls, dataStoreForIdentifier: &*uuid_ns];
+            let _: () = msg_send![&config, setWebsiteDataStore: data_store];
+        }
+
         if _devtools {
             let prefs = config.preferences();
             let key = NSString::from_str("developerExtrasEnabled");

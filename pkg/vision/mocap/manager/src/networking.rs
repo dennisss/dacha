@@ -67,7 +67,7 @@ impl CameraResolver {
 
     pub async fn create_time_server(&self) -> Result<BasicTimeNode> {
         let bind_addr = SocketAddr::new(self.route.addr.clone(), 0); // random port
-        BasicTimeNode::create(bind_addr, &self.route.name).await
+        BasicTimeNode::create(bind_addr, self.route.clone()).await
     }
 
     pub fn disconnect_missing_cameras(&self) -> bool {
