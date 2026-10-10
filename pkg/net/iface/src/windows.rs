@@ -6,7 +6,7 @@ use windows::Win32::NetworkManagement::IpHelper::{
     IF_TYPE_ETHERNET_CSMACD, IF_TYPE_IEEE80211, IF_TYPE_SOFTWARE_LOOPBACK, IF_TYPE_TUNNEL,
 };
 use windows::Win32::Networking::WinSock::{
-    AF_INET, AF_INET6, AF_UNSPEC, SOCKADDR_IN, SOCKADDR_IN6
+    AF_INET, AF_INET6, AF_UNSPEC, SOCKADDR_IN, SOCKADDR_IN6, IpDadStatePreferred
 };
 
 use common::errors::*;
@@ -102,7 +102,11 @@ impl NetworkInterface {
                     let addr_struct = &*unicast;
                     let sockaddr = addr_struct.Address.lpSockaddr;
                     
-                    if !sockaddr.is_null() {
+                    // Skip addresses that can't be bound yet (e.g. a stale
+                    // tentative link-local address on a disconnected adapter).
+                    let usable = addr_struct.DadState == IpDadStatePreferred;
+
+                    if usable && !sockaddr.is_null() {
                         let family = (*sockaddr).sa_family;
                         let prefix_len = addr_struct.OnLinkPrefixLength;
 
