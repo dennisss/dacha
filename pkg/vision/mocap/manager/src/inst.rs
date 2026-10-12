@@ -170,6 +170,9 @@ struct CameraStatus {
     status: MocapCameraStatus,
     ptp_status: ptp_proto::ptp::StatusResponse,
     check_time: Instant,
+
+    /// Negotiated speed of the camera's ethernet link (if known).
+    link_speed_mbps: Option<u32>,
 }
 
 struct FrameEntry {
@@ -371,6 +374,10 @@ impl MocapManagerInner {
 
                     proto.set_synced(true);
                     proto.set_last_sync_age((now - s.check_time).as_secs_f64());
+
+                    if let Some(v) = s.link_speed_mbps {
+                        proto.set_link_speed_mbps(v);
+                    }
                 }
 
                 proto.set_active(camera_config_state.active_camera_id == Some(*camera_id));
@@ -1211,8 +1218,20 @@ impl MocapManagerInner {
         let mut request_context = rpc::ClientRequestContext::default();
         request_context.http.wait_for_ready = true;
 
+        let mut link_speed_mbps = None;
+        let mut last_link_check: Option<Instant> = None;
+
         loop {
             let now = Instant::now();
+
+            // A camera on a slow (e.g. 100 Mbps) link has too much network latency to stay
+            // in PTP sync, so periodically check the speed it negotiated.
+            if let Some(supervisor_stub) = &supervisor_stub {
+                if last_link_check.map(|t| now - t >= Duration::from_secs(5)).unwrap_or(true) {
+                    last_link_check = Some(now);
+                    link_speed_mbps = Self::read_link_speed(supervisor_stub).await;
+                }
+            }
 
             let ptp_status = {
                 let req = ptp_proto::ptp::StatusRequest::default();
@@ -1291,7 +1310,8 @@ impl MocapManagerInner {
                 entry.status = Some(CameraStatus {
                     status: status.clone(),
                     ptp_status,
-                    check_time: now
+                    check_time: now,
+                    link_speed_mbps,
                 });
             });
 
@@ -1304,6 +1324,23 @@ impl MocapManagerInner {
                 Self::wait_for_new_config_epoch(&shared, intended_camera_config.epoch())
             ).await;
         }
+    }
+
+    /// Reads the speed of the camera's ethernet link from sysfs. Returns None if the camera
+    /// couldn't be reached or doesn't know the speed.
+    async fn read_link_speed(supervisor_stub: &SupervisorStub) -> Option<u32> {
+        let data = executor::timeout(
+            Duration::from_secs(1),
+            read_camera_file(supervisor_stub, "/sys/class/net/eth0/speed")
+        ).await.ok()?.ok()?;
+
+        // NOTE: The kernel reports -1 if the speed is unknown.
+        let speed = std::str::from_utf8(&data).ok()?.trim().parse::<i64>().ok()?;
+        if speed <= 0 {
+            return None;
+        }
+
+        Some(speed as u32)
     }
 
     async fn store_factory_intrinsics(

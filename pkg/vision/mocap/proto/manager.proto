@@ -215,9 +215,13 @@ message MocapManagerCameraStatus {
 
     double last_sync_age = 6;
 
-    // TODO: Metrics and health. Last heartbeat age 
+    // TODO: Metrics and health. Last heartbeat age
 
     reserved 7, 8;
+
+    // Speed in Mbps that the camera's ethernet link negotiated (0 if unknown).
+    // With the default PTP config, slower than 1000 Mbps links add too much latency for time sync.
+    uint32 link_speed_mbps = 9;
 }
 
 message ReadTrackedPointsRequest {

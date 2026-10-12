@@ -187,6 +187,20 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
             angle = <span>{o.horizon_angle}&deg;</span>;
         }
 
+        // Slower than gigabit links add enough latency to exceed the PTP follower's
+        // max_network_rtt (10us by default), so time sync stops working.
+        let link_warning = null;
+        let link_speed = (camera.link_speed_mbps || 0) * 1;
+        if (link_speed > 0 && link_speed < 1000) {
+            link_warning = (
+                <span className="material-symbols-fill"
+                    style={{ color: 'red', marginLeft: 4, verticalAlign: 'middle', fontSize: '1.1em', lineHeight: 1, cursor: 'help' }}
+                    title={`The ethernet cable to this camera only works at ${link_speed} Mbps.`}>
+                    warning
+                </span>
+            );
+        }
+
         let config = {};
         (this.state.status.config.per_camera || []).map((c) => {
             if (c.camera_id == camera.id) {
@@ -224,6 +238,7 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
                     <a href={"https://" + entity_id_to_string(camera.id) + ".mocap_camera.worker.home.cluster.internal"}>
                         {entity_id_to_string(camera.id)}
                     </a>
+                    {link_warning}
                 </td>
                 <td>{color_format(ptp_error, ptp_age)}</td>
                 <td>{color_format(pps_error, pps_age)}</td>
