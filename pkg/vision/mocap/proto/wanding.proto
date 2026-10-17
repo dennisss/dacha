@@ -17,6 +17,71 @@ message WandingCalibrationConfig {
     double camera_height_guess = 2;
 }
 
+// Per wand marker summary of the final reprojection residuals of a wanding
+// calibration.
+message WandMarkerResidual {
+    // 0 = left arm end, 1 = middle, 2 = right arm end, 3 = bottom arm end.
+    uint32 marker_index = 1;
+
+    uint32 num_views = 2;
+
+    // RMS reprojection error in pixels.
+    double rms_error = 3;
+
+    // Mean of (observed - projected) in pixels. Should be close to zero.
+    math.VectorProto mean_residual = 4;
+
+    // Linearized estimate (in meters, wand frame) of how much this marker would
+    // need to move to explain its residuals with everything else fixed. Only
+    // relative values between markers are meaningful.
+    math.VectorProto offset_estimate = 5;
+}
+
+// Result of optimizing the wand marker positions along with the cameras
+// (after a wanding calibration was processed).
+//
+// The wand's own frame is fixed by keeping the middle marker at the origin,
+// the left marker on the -X axis and the bottom marker in the XY plane.
+// Reprojection can't observe the overall scale, so the configured distance
+// between the left and right markers (the longest one) is kept exactly.
+message WandRefinementResult {
+    bool failed = 1;
+
+    // Wand marker positions (in meters, same order/frame as
+    // WandPatternFinderConfig.points) that the calibration used before
+    // refinement.
+    repeated math.VectorProto reference_points = 2;
+
+    // Measured marker positions. Applying the calibration uses these as
+    // WandPatternFinderConfig.points until the manager restarts.
+    repeated math.VectorProto refined_points = 3;
+
+    // Left-right marker distance (in meters) used as the scale reference.
+    double scale_distance = 4;
+
+    // RMS reprojection error in pixels with the reference and the refined
+    // marker positions.
+    double error_before = 5;
+    double error_after = 6;
+
+    repeated WandMarkerResidual marker_residuals_before = 7;
+    repeated WandMarkerResidual marker_residuals_after = 8;
+}
+
+message WandingCalibrationResult {
+    // RMS reprojection error from the wanding optimizer.
+    double error = 1;
+
+    bool failed = 2;
+
+    // True while a RefineWandingCalibrationCommand is running.
+    bool refining = 3;
+
+    // Present once a RefineWandingCalibrationCommand finished. If it
+    // succeeded, applying the calibration uses the refined cameras and wand.
+    WandRefinementResult refinement = 4;
+}
+
 message WandingCalibrationState {
     // If present, wanding has started and we are recording data.
     // This field summarizes the current data collection progress.
@@ -39,13 +104,6 @@ message WandingCalibrationStats {
     uint64 num_deduped_frames = 3;
 }
 
-message WandingCalibrationResult {
-    // RMS reprojection error from the wanding optimizer.
-    double error = 1;
-
-    bool failed = 2;
-}
-
 message StartWandingCalibrationCommand {
 
 }
@@ -55,6 +113,12 @@ message CancelWandingCalibrationCommand {
 }
 
 message ProcessWandingCalibrationCommand {
+
+}
+
+// After processing, also measures the wand marker positions (see
+// WandRefinementResult). Blocks until done.
+message RefineWandingCalibrationCommand {
 
 }
 

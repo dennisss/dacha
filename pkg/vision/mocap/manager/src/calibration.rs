@@ -24,6 +24,7 @@ use cluster_client::id::{entity_id_from_string, entity_id_to_string};
 use math_proto_util::VectorProtoExt;
 
 use crate::wand::*;
+use crate::wand_geometry::*;
 use crate::matching::CameraParameters;
 use crate::proto_utils::*;
 use crate::config::*;
@@ -50,12 +51,80 @@ pub struct WandingCalibrationSolver {
     last_match_per_camera: HashMap<u64, BlobPatternMatch, FastHasherBuilder>,
 
     initial_system_state: Option<MocapManagerStatus>,
+
+    /// Set by solve() so that refine() can re-run the optimization.
+    processed: Option<ProcessedData>,
+}
+
+struct ProcessedData {
+    frames: Vec<FrameData>,
+    anchor_camera_id: u64,
+
+    /// Optimized (but not yet aligned) camera parameters.
+    params: Vec<CameraParameters>,
 }
 
 #[derive(Clone)]
 pub struct WandingCalibrationSolution {
     pub error: f64,
     pub params: Vec<CameraParameters>
+}
+
+/// Result of WandingCalibrationSolver::refine().
+#[derive(Clone)]
+pub struct WandRefinement {
+    /// Cameras optimized together with the wand.
+    pub solution: WandingCalibrationSolution,
+
+    /// Wand marker positions used before refining (from the config).
+    pub reference_points: Vec<Vector3d>,
+
+    /// Measured wand marker positions (same frame as reference_points).
+    pub refined_points: Vec<Vector3d>,
+
+    /// Left-right marker distance which was kept fixed to define the scale.
+    pub scale_distance: f64,
+
+    /// RMS reprojection error with the reference points.
+    pub error_before: f64,
+
+    pub marker_residuals_before: Vec<WandMarkerResidualStats>,
+    pub marker_residuals_after: Vec<WandMarkerResidualStats>,
+}
+
+impl WandRefinement {
+    pub fn to_proto(&self) -> WandRefinementResult {
+        let mut proto = WandRefinementResult::default();
+        for p in &self.reference_points {
+            proto.add_reference_points(p.to_proto());
+        }
+        for p in &self.refined_points {
+            proto.add_refined_points(p.to_proto());
+        }
+        proto.set_scale_distance(self.scale_distance);
+        proto.set_error_before(self.error_before);
+        proto.set_error_after(self.solution.error);
+        for m in &self.marker_residuals_before {
+            proto.add_marker_residuals_before(m.to_proto());
+        }
+        for m in &self.marker_residuals_after {
+            proto.add_marker_residuals_after(m.to_proto());
+        }
+        proto
+    }
+}
+
+/// Output of WandingCalibrationSolver::optimize().
+struct OptimizeResult {
+    /// NOTE: The camera parameters are not aligned yet.
+    solution: WandingCalibrationSolution,
+
+    /// Empty unless requested.
+    marker_residuals: Vec<WandMarkerResidualStats>,
+
+    /// If the wand was refined, the optimized marker positions (in the same
+    /// frame as wand_reference_points()).
+    refined_wand_points: Option<Vec<Vector3d>>,
 }
 
 
@@ -73,6 +142,7 @@ impl WandingCalibrationSolver {
             last_match_per_camera: Default::default(),
             initial_system_state: None,
             stats: WandingCalibrationStats::default(),
+            processed: None,
         }
     }
 
@@ -183,11 +253,95 @@ impl WandingCalibrationSolver {
         let (anchor_camera_id, camera_initial_extrinsics) = self.extract_initial_extrinsics_pnp(&mut data)?;
 
         println!("Optimizing...");
-        let mut solution = self.optimize(&data, anchor_camera_id, &camera_initial_extrinsics)?;
+        let mut solution = self.optimize(
+            &data, anchor_camera_id, &camera_initial_extrinsics, &self.camera_intrinsics, false, false
+        )?.solution;
+
+        self.processed = Some(ProcessedData {
+            frames: data,
+            anchor_camera_id,
+            params: solution.params.clone(),
+        });
 
         self.align_extrinsics(&mut solution.params)?;
 
         Ok(solution)
+    }
+
+    /// After solve(), re-runs the optimization while also measuring the wand
+    /// marker positions and reports how they differ from the configured ones.
+    pub fn refine(&self) -> Result<WandRefinement> {
+        let mut refinement = self.refine_unaligned()?;
+        self.align_extrinsics(&mut refinement.solution.params)?;
+        Ok(refinement)
+    }
+
+    fn refine_unaligned(&self) -> Result<WandRefinement> {
+        let processed = self.processed.as_ref()
+            .ok_or_else(|| err_msg("Wanding calibration not processed yet"))?;
+
+        // Start from the already optimized cameras.
+        let mut extrinsics = HashMap::<u64, CameraExtrinsics, FastHasherBuilder>::default();
+        let mut intrinsics = HashMap::<u64, CameraIntrinsicsModel, FastHasherBuilder>::default();
+        for p in &processed.params {
+            extrinsics.insert(p.id, p.extrinsics.clone());
+            intrinsics.insert(p.id, p.intrinsics.clone());
+        }
+
+        println!("Refining: residuals with the configured wand...");
+        let before = self.optimize(
+            &processed.frames, processed.anchor_camera_id, &extrinsics, &intrinsics, false, true)?;
+
+        println!("Refining: optimizing the wand markers...");
+        let mut after = self.optimize(
+            &processed.frames, processed.anchor_camera_id, &extrinsics, &intrinsics, true, true)?;
+
+        let reference_points = wand_reference_points(self.config.wand())?;
+        let mut refined_points = after.refined_wand_points.take()
+            .ok_or_else(|| err_msg("Missing refined wand points"))?;
+
+        // The optimization kept the left-middle distance fixed but the scale
+        // is equally consistent with any uniform scaling of the wand and
+        // camera positions. Use the left-right distance as the reference
+        // instead as it is the longest distance on the wand (so it has the
+        // lowest relative error).
+        let scale_distance = (&reference_points[0] - &reference_points[2]).norm();
+        let scale = scale_distance / (&refined_points[0] - &refined_points[2]).norm();
+
+        // Scale around the middle marker (the origin of the wand frame).
+        let origin = reference_points[1].clone();
+        for p in &mut refined_points {
+            *p = origin.clone() + ((p.clone() - &origin) * scale);
+        }
+        // Scale the world around the anchor camera (so it stays fixed):
+        // world' = c + scale * (world - c), so t' = scale * t + (scale - 1) * R * c.
+        let anchor_position = after.solution.params.iter()
+            .find(|p| p.id == processed.anchor_camera_id)
+            .ok_or_else(|| err_msg("Missing anchor camera"))?
+            .extrinsics.position();
+        for p in &mut after.solution.params {
+            let r = from_axis_angle(&p.extrinsics.rotation);
+            p.extrinsics.translation = (p.extrinsics.translation.clone() * scale)
+                + ((r * &anchor_position) * (scale - 1.0));
+        }
+        for m in &mut after.marker_residuals {
+            m.offset_estimate = m.offset_estimate.take().map(|v| v * scale);
+        }
+
+        print_marker_residual_stats("Per wand marker residuals with the configured wand:", &before.marker_residuals);
+        print_marker_residual_stats("Per wand marker residuals with the refined wand:", &after.marker_residuals);
+        print_refined_wand_geometry(&reference_points, &refined_points);
+        println!("RMS error: {} px -> {} px", before.solution.error, after.solution.error);
+
+        Ok(WandRefinement {
+            solution: after.solution,
+            reference_points,
+            refined_points,
+            scale_distance,
+            error_before: before.solution.error,
+            marker_residuals_before: before.marker_residuals,
+            marker_residuals_after: after.marker_residuals,
+        })
     }
 
     fn select_frame_subset(&self, frames: &mut Vec<FrameData>) -> Result<Vec<FrameData>> {
@@ -552,10 +706,45 @@ impl WandingCalibrationSolver {
         data: &[FrameData],
         anchor_camera_id: u64,
         camera_initial_extrinsics: &HashMap<u64, CameraExtrinsics, FastHasherBuilder>,
-    ) -> Result<WandingCalibrationSolution> {
+        camera_initial_intrinsics: &HashMap<u64, CameraIntrinsicsModel, FastHasherBuilder>,
+        refine_wand: bool,
+        compute_marker_residuals: bool,
+    ) -> Result<OptimizeResult> {
         // TODO: Use something like a Huber/Cauchy loss to reduce sensitivity to outliers if we
         // messed up want detection.
         let mut solver = BundleAdjustmentSolver::new();
+
+        let wand_points = wand_reference_points(self.config.wand())?;
+
+        // When refining the wand, the wand markers are optimized in a canonical
+        // frame which fixes the 7 gauge degrees of freedom (position,
+        // orientation, scale) of the wand's own frame:
+        // - middle marker fixed at the origin
+        // - left marker fixed on the -X axis (fixing the scale with the
+        //   left-middle distance, see refine_unaligned() for the final scale)
+        // - bottom marker constrained to the XY plane.
+        let wand_gauge = {
+            if refine_wand {
+                Some(WandGauge::from_points(&wand_points)?)
+            } else {
+                None
+            }
+        };
+        if let Some(gauge) = &wand_gauge {
+            for (i, p) in wand_points.iter().enumerate() {
+                let free_axes = match i {
+                    0 | 1 => [false, false, false],
+                    2 => [true, true, true],
+                    3 => [true, true, false],
+                    _ => unreachable!()
+                };
+
+                solver.add_shared_object_point(&gauge.to_canonical(p), free_axes);
+            }
+        }
+
+        // Wand marker index of each point view added to the solver.
+        let mut view_markers = vec![];
 
         let mut camera_id_to_index = HashMap::<u64, usize>::default();
 
@@ -564,7 +753,7 @@ impl WandingCalibrationSolver {
             let fixed = camera_id_to_index.is_empty();
 
             let idx = solver.add_camera(
-                self.camera_intrinsics.get(id).unwrap(),
+                camera_initial_intrinsics.get(id).unwrap(),
                 &extrinsics.rotation,
                 &extrinsics.translation,
                 *id == anchor_camera_id,
@@ -659,6 +848,18 @@ impl WandingCalibrationSolver {
             }
 
 
+            if let Some(gauge) = &wand_gauge {
+                // Convert the initial wand pose to be relative to the canonical frame.
+                let ext = CameraExtrinsics::from_mat4x4(&(
+                    CameraExtrinsics {
+                        rotation: object_rotation.clone(),
+                        translation: object_translation.clone(),
+                    }.to_mat4x4() * gauge.from_canonical_mat4x4()
+                ));
+                object_rotation = ext.rotation;
+                object_translation = ext.translation;
+            }
+
             let object_idx = {
                 solver.add_object(
                     &object_rotation,
@@ -669,16 +870,30 @@ impl WandingCalibrationSolver {
             for (cam_id, cam_data) in &entry.cameras {
                 let cam_idx = *camera_id_to_index.get(cam_id).unwrap();
 
+                // The points are always the wand markers in order.
+                assert_eq!(cam_data.points_2d.len(), NUM_WAND_MARKERS);
+
                 for i in 0..cam_data.points_2d.len() {
                     let point_2d = &cam_data.points_2d[i];
                     let point_3d = &cam_data.points_3d[i];
 
-                    solver.add_object_point_view(
-                        object_idx,
-                        cam_idx,
-                        point_2d,
-                        point_3d
-                    );
+                    if wand_gauge.is_some() {
+                        solver.add_shared_object_point_view(
+                            object_idx,
+                            cam_idx,
+                            point_2d,
+                            i
+                        );
+                    } else {
+                        solver.add_object_point_view(
+                            object_idx,
+                            cam_idx,
+                            point_2d,
+                            point_3d
+                        );
+                    }
+
+                    view_markers.push(i);
                 }
             }
 
@@ -696,9 +911,26 @@ impl WandingCalibrationSolver {
 
         println!("Solved in {:?}!", end - start);
 
+        let mut marker_residuals = vec![];
+        if compute_marker_residuals {
+            marker_residuals = compute_marker_residual_stats(&solution, &view_markers);
+            if let Some(gauge) = &wand_gauge {
+                for m in &mut marker_residuals {
+                    m.offset_estimate = m.offset_estimate.as_ref()
+                        .map(|v| gauge.direction_from_canonical(v));
+                }
+            }
+        }
+
+        let refined_wand_points = wand_gauge.as_ref().map(|gauge| {
+            (0..NUM_WAND_MARKERS)
+                .map(|i| gauge.from_canonical(&solution.shared_object_point(i)))
+                .collect::<Vec<_>>()
+        });
+
         let mut out = WandingCalibrationSolution {
             error: solution.error(),
-            params: vec![]
+            params: vec![],
         };
 
         for (cam_id, cam_idx) in camera_id_to_index {
@@ -712,7 +944,11 @@ impl WandingCalibrationSolver {
         // TODO: Ideally compute RMS over all data and not just the selected subset.
         println!("RMS Error: {}", out.error);
 
-        Ok(out)
+        Ok(OptimizeResult {
+            solution: out,
+            marker_residuals,
+            refined_wand_points,
+        })
     }
 
     // MAkes 

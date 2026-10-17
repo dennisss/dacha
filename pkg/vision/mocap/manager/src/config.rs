@@ -23,6 +23,9 @@ pub struct ManagerConfigContainer {
 impl ManagerConfigContainer {
     pub fn create(base: &MocapManagerConfig) -> Result<Self> {
 
+        crate::wand::wand_reference_points(base.wand())
+            .map_err(|e| format_err!("Invalid wand config: {}", e))?;
+
         let mut merged = base.clone();
 
         for per_cam in merged.per_camera_mut() {
@@ -129,6 +132,19 @@ impl ManagerConfigContainer {
             
             self.merged.rigid_body_tracker_mut().merge_from(other.rigid_body_tracker());
             self.diff.rigid_body_tracker_mut().merge_from(other.rigid_body_tracker());
+        }
+
+        if other.has_wand() {
+            // Measured wand points are replaced as a whole.
+            //
+            // NOTE: These are intentionally not added to the diff so they are only
+            // used until the app restarts (so that users decide again whether to
+            // refine the wand on each new calibration session).
+            self.merged.wand_mut().clear_points();
+            self.merged.wand_mut().merge_from(other.wand());
+
+            crate::wand::wand_reference_points(self.merged.wand())
+                .map_err(|e| format_err!("Invalid wand config: {}", e))?;
         }
 
         if other.has_skeleton_tracker() {

@@ -34,6 +34,8 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
         show_grayscale: false,
         show_fullscreen: false,
         show_crosshair: false,
+
+        show_wand_details: false,
     }
 
     constructor(props: CamerasPageProps) {
@@ -708,8 +710,9 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
 
         function make_button(text, disabled, on_click) {
             return (
-                <div style={{ width: '25%', padding: '0 5px', display: 'inline-block' }}>
-                    <Button preset='outline-primary' disabled={disabled} style={{ width: '100%', opacity: (disabled ? 0.5 : 1) }} onClick={on_click}>{text}</Button>
+                // NOTE: Flex so that the 5 buttons wrap as a whole instead of breaking their labels.
+                <div style={{ flex: '1 0 auto' }}>
+                    <Button preset='outline-primary' disabled={disabled} style={{ width: '100%', whiteSpace: 'nowrap', padding: '6px 8px', opacity: (disabled ? 0.5 : 1) }} onClick={on_click}>{text}</Button>
                 </div>
             )
         }
@@ -722,6 +725,8 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
         let results = null;
         let have_results = false;
         let have_valid_results = false;
+        let refining = false;
+        let refined = false;
 
         if (status.mode && status.mode.wanding_calibration) {
             is_calibrating = true;
@@ -747,9 +752,16 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
                 have_results = true;
 
                 have_valid_results = mode.result.failed ? false : true;
+                refining = mode.result.refining ? true : false;
+                refined = mode.result.refinement ? true : false;
 
                 let props = [];
                 (Object.keys(mode.result) || []).map((key) => {
+                    // Rendered separately below.
+                    if (key == 'refinement' || key == 'refining') {
+                        return;
+                    }
+
                     props.push({
                         name: key,
                         value: JSON.stringify(round_nested_digits(mode.result[key], 2))
@@ -760,6 +772,7 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
                     <div style={{ marginTop: 40, marginBottom: -10 }}>
                         <div style={{ fontWeight: 'bold' }}>Results:</div>
                         <PropertiesTable properties={props} />
+                        {have_valid_results ? this._render_wand_refinement(mode.result) : null}
                     </div>
                 );
             }
@@ -768,24 +781,225 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
         return (
             <Card header="Wanding Calibration" style={{ marginBottom: 10 }}>
                 <CardBody>
-                    <div style={{ margin: '0 -5px' }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                         {make_button('Start', is_calibrating, (done) => {
                             this._execute({ start_wanding_calibration: {} }, done)
                         })}
                         {make_button('Process', !is_calibrating || have_results, (done) => {
                             this._execute({ process_wanding_calibration: {} }, done)
                         })}
-                        {make_button('Apply', !have_valid_results, (done) => {
+                        {make_button('Refine', !have_valid_results || refining || refined, (done) => {
+                            this._execute({ refine_wanding_calibration: {} }, done)
+                        })}
+                        {make_button('Apply', !have_valid_results || refining, (done) => {
                             this._execute({ apply_wanding_calibration: {} }, done)
                         })}
                         {make_button('Cancel', !is_calibrating, (done) => {
                             this._execute({ cancel_wanding_calibration: {} }, done)
                         })}
                     </div>
+                    <div style={{ marginTop: 10, fontSize: '0.9em' }}>
+                        Wand: {this._wand_geometry_description()}
+                    </div>
                     {stats}
                     {results}
                 </CardBody>
             </Card>
+        );
+    }
+
+    _wand_geometry_description() {
+        let wand = this.state.status.config.wand || {};
+        if (wand.points && wand.points.length == 4) {
+            return 'measured marker positions';
+        }
+
+        return 'configured shape';
+    }
+
+    // Shows what pressing 'Refine' did and what pressing 'Apply' will save.
+    _render_wand_refinement(result) {
+        const NAMES = ['Left', 'Middle', 'Right', 'Bottom'];
+
+        const NUM: any = { textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' };
+        const MUTED: any = { opacity: 0.7, fontSize: '0.9em' };
+        const SECTION: any = { fontWeight: 'bold', marginTop: 16, marginBottom: 4 };
+        const TABLE: any = { margin: 0 };
+
+        // Formats without showing '-0.00'.
+        let fixed = (x, digits = 2) => {
+            let v = Math.abs(x) < 0.5 * Math.pow(10, -digits) ? 0 : x;
+            return v.toFixed(digits);
+        };
+        let signed = (x, digits = 2) => {
+            let s = fixed(x, digits);
+            return (parseFloat(s) > 0 ? '+' : '') + s;
+        };
+
+        if (result.refining) {
+            return (
+                <div style={{ marginTop: 16, ...MUTED }}>
+                    Measuring the wand...
+                </div>
+            );
+        }
+
+        let r = result.refinement;
+        if (!r) {
+            return (
+                <div style={{ marginTop: 16, ...MUTED }}>
+                    Optional: press Refine to also measure your wand before applying.
+                </div>
+            );
+        }
+
+        if (r.failed) {
+            return (
+                <div style={{ marginTop: 16 }}>
+                    <div style={SECTION}>Wand refinement failed</div>
+                    <div style={MUTED}>Apply saves the calibration from Process (without a wand measurement).</div>
+                </div>
+            );
+        }
+
+        // Proto vectors are { values: [...] } (in meters) with zeros possibly omitted.
+        let mm = (v) => [0, 1, 2].map((i) => (((v && v.values) || [])[i] || 0) * 1000);
+        let dist = (a, b) => Math.sqrt([0, 1, 2].map((i) => (a[i] - b[i]) ** 2).reduce((x, y) => x + y, 0));
+
+        let reference = (r.reference_points || []).map(mm);
+        let measured = (r.refined_points || []).map(mm);
+        if (reference.length != 4 || measured.length != 4) {
+            return null;
+        }
+
+        let by_marker = (list) => {
+            let out = {};
+            (list || []).map((m) => { out[m.marker_index || 0] = m; });
+            return out;
+        };
+        let before = by_marker(r.marker_residuals_before);
+        let after = by_marker(r.marker_residuals_after);
+
+        let offsets = measured.map((p, i) => p.map((x, j) => x - reference[i][j]));
+        let largest = 0;
+        offsets.map((d, i) => { if (dist(d, [0, 0, 0]) > dist(offsets[largest], [0, 0, 0])) { largest = i; } });
+
+        let error_before = r.error_before || 0;
+        let error_after = r.error_after || 0;
+        let error_drop = error_before > 0 ? Math.round(100 * (1 - error_after / error_before)) : 0;
+
+        const DISTANCES = [[0, 2], [0, 1], [1, 2], [1, 3]];
+
+        let show_details = this.state.show_wand_details;
+
+        return (
+            <div style={{ marginTop: 16 }}>
+                <div>
+                    <b>Wand refined:</b> error {fixed(error_before, 3)} &rarr; {fixed(error_after, 3)} px
+                    ({error_drop}% lower), largest marker offset {fixed(dist(offsets[largest], [0, 0, 0]))} mm
+                    ({NAMES[largest].toLowerCase()}).{' '}
+                    <a href="#" onClick={(e) => { e.preventDefault(); this.setState({ show_wand_details: !show_details }); }}>
+                        {show_details ? 'Hide details' : 'Details'}
+                    </a>
+                </div>
+                <div style={MUTED}>
+                    Apply saves the camera calibration. The measured wand is used until Mocap is closed.
+                </div>
+
+                {show_details ? (
+                <div>
+                <div style={{ marginTop: 10, ...MUTED }}>
+                    Scale: the left&ndash;right marker distance is kept at {fixed((r.scale_distance || 0) * 1000)} mm
+                    (cameras can't measure absolute size).
+                </div>
+
+                <div style={SECTION}>Per marker</div>
+                <table className="table table-sm" style={TABLE}>
+                    <thead>
+                        <tr>
+                            <th></th>
+                            <th colSpan={4} style={{ textAlign: 'center' }}>Offset from geometry in use (mm)</th>
+                            <th colSpan={2} style={{ textAlign: 'center' }}>Error (px)</th>
+                        </tr>
+                        <tr>
+                            <th>Marker</th>
+                            <th style={NUM}>X</th>
+                            <th style={NUM}>Y</th>
+                            <th style={NUM}>Z</th>
+                            <th style={NUM}>Total</th>
+                            <th style={NUM}>Before</th>
+                            <th style={NUM}>After</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {offsets.map((d, i) => (
+                            <tr key={i}>
+                                <td>{NAMES[i]}</td>
+                                <td style={NUM}>{signed(d[0])}</td>
+                                <td style={NUM}>{signed(d[1])}</td>
+                                <td style={NUM}>{signed(d[2])}</td>
+                                <td style={NUM}>{fixed(dist(d, [0, 0, 0]))}</td>
+                                <td style={NUM}>{fixed((before[i] && before[i].rms_error) || 0, 3)}</td>
+                                <td style={NUM}>{fixed((after[i] && after[i].rms_error) || 0, 3)}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+
+                <div style={SECTION}>Distances (mm)</div>
+                <table className="table table-sm" style={TABLE}>
+                    <thead>
+                        <tr>
+                            <th>Between</th>
+                            <th style={NUM}>In use</th>
+                            <th style={NUM}>Measured</th>
+                            <th style={NUM}>Change</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {DISTANCES.map(([a, b]) => {
+                            let d0 = dist(reference[a], reference[b]);
+                            let d1 = dist(measured[a], measured[b]);
+                            return (
+                                <tr key={a + '-' + b}>
+                                    <td>{NAMES[a]} &ndash; {NAMES[b].toLowerCase()}{a == 0 && b == 2 ? ' (scale)' : ''}</td>
+                                    <td style={NUM}>{fixed(d0)}</td>
+                                    <td style={NUM}>{fixed(d1)}</td>
+                                    <td style={NUM}>{signed(d1 - d0)}</td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+
+                <div style={SECTION}>Measured wand (used after Apply)</div>
+                <table className="table table-sm" style={TABLE}>
+                    <thead>
+                        <tr>
+                            <th>Marker position (mm)</th>
+                            <th style={NUM}>X</th>
+                            <th style={NUM}>Y</th>
+                            <th style={NUM}>Z</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {measured.map((p, i) => (
+                            <tr key={i}>
+                                <td>{NAMES[i]}</td>
+                                <td style={NUM}>{fixed(p[0])}</td>
+                                <td style={NUM}>{fixed(p[1])}</td>
+                                <td style={NUM}>{fixed(p[2])}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+                <div style={{ marginTop: 6, ...MUTED }}>
+                    Until Mocap is closed, calibration, wand detection and setting the origin use these
+                    positions. Cancel discards everything.
+                </div>
+                </div>
+                ) : null}
+            </div>
         );
     }
 

@@ -12,6 +12,7 @@ pub mod matching;
 mod alpha_beta;
 mod kalman;
 pub mod wand;
+pub mod wand_geometry;
 mod mjpeg;
 mod util;
 mod proto_utils;
