@@ -11,6 +11,7 @@ pub struct BundleAdjustmentSolver {
     solver: NonLinearSolver<'static>,
     cameras: Vec<Camera>,
     objects: Vec<Object>,
+    shared_points: Vec<SharedPoint>,
 
     // These are just used for computing RMS error at the end.
     object_points: Vec<ObjectPoint>
@@ -27,11 +28,44 @@ struct Object {
     t_param: usize,
 }
 
+/// A point in an object's local coordinate frame whose position is optimized.
+///
+/// It can be shared by observations of many objects (e.g. the same marker on a
+/// calibration wand seen at many different wand poses).
+struct SharedPoint {
+    /// One single-value parameter block per axis so that each axis can be
+    /// independently frozen.
+    params: [usize; 3],
+}
+
+enum ObjectPointSource {
+    Fixed(Vector3d),
+    Shared(usize),
+}
+
 struct ObjectPoint {
     camera_idx: usize,
     object_idx: usize,
-    point_3d: Vector3d,
+    point: ObjectPointSource,
     point_2d: Vector2d,
+}
+
+/// Reprojection residual of one observation of an object point by a camera.
+#[derive(Clone, Debug)]
+pub struct ObjectPointViewResidual {
+    pub camera_idx: usize,
+    pub object_idx: usize,
+
+    /// If this was added with add_shared_object_point_view, the index of the
+    /// shared point.
+    pub shared_point_idx: Option<usize>,
+
+    /// Position of the point in the object's local frame (for shared points,
+    /// this is the solved position).
+    pub point_3d: Vector3d,
+
+    /// Observed point minus the projected point (in pixels).
+    pub residual: Vector2d,
 }
 
 impl BundleAdjustmentSolver {
@@ -43,6 +77,7 @@ impl BundleAdjustmentSolver {
             solver,
             cameras: vec![],
             objects: vec![],
+            shared_points: vec![],
             object_points: vec![]
         }
     }
@@ -139,14 +174,74 @@ impl BundleAdjustmentSolver {
             &[ cam.r_param, cam.t_param, obj.r_param, obj.t_param, cam.i_param ],
             ObjectPointReprojectionResidual {
                 point_2d: point_2d.clone(),
-                point_3d: point_3d.clone(),
+                point_3d: Some(point_3d.clone()),
             }
         );
 
         self.object_points.push(ObjectPoint {
             camera_idx,
             object_idx,
-            point_3d: point_3d.clone(),
+            point: ObjectPointSource::Fixed(point_3d.clone()),
+            point_2d: point_2d.clone(),
+        });
+    }
+
+    /// Adds a point (in object local coordinates) whose position will be
+    /// optimized along with the rest of the parameters.
+    ///
+    /// 'free_axes' selects which of the x/y/z coordinates may change. The rest
+    /// stay at their initial values (useful for fixing the gauge freedom of
+    /// the object's coordinate frame).
+    pub fn add_shared_object_point(
+        &mut self,
+        initial_point: &Vector3d,
+        free_axes: [bool; 3],
+    ) -> usize {
+        let idx = self.shared_points.len();
+
+        let mut params = [0; 3];
+        for i in 0..3 {
+            params[i] = self.solver.add_parameter_block(
+                &[initial_point[i]], LinearParameterBlock::default());
+            if !free_axes[i] {
+                self.solver.freeze_parameter_block(params[i]);
+            }
+        }
+
+        self.shared_points.push(SharedPoint { params });
+
+        idx
+    }
+
+    /// Like add_object_point_view but the 3d point is a shared point created
+    /// with add_shared_object_point.
+    pub fn add_shared_object_point_view(
+        &mut self,
+        object_idx: usize,
+        camera_idx: usize,
+        point_2d: &Vector2d,
+        shared_point_idx: usize,
+    ) {
+        let obj = &self.objects[object_idx];
+        let cam = &self.cameras[camera_idx];
+        let pt = &self.shared_points[shared_point_idx];
+
+        self.solver.add_residual_block(
+            &[
+                cam.r_param, cam.t_param, obj.r_param, obj.t_param,
+                pt.params[0], pt.params[1], pt.params[2],
+                cam.i_param
+            ],
+            ObjectPointReprojectionResidual {
+                point_2d: point_2d.clone(),
+                point_3d: None,
+            }
+        );
+
+        self.object_points.push(ObjectPoint {
+            camera_idx,
+            object_idx,
+            point: ObjectPointSource::Shared(shared_point_idx),
             point_2d: point_2d.clone(),
         });
     }
@@ -192,22 +287,59 @@ impl<'a> BundleAdjustmentSolution<'a> {
         }
     }
 
+    pub fn shared_object_point(&self, idx: usize) -> Vector3d {
+        let pt = &self.solver.shared_points[idx];
+        let mut out = Vector3d::zero();
+        for i in 0..3 {
+            out[i] = self.solution.param_block(pt.params[i])[0];
+        }
+        out
+    }
+
+    /// Projects a point given in an object's local frame into a camera's image
+    /// using the solved parameters.
+    pub fn project_object_point(
+        &self, camera_idx: usize, object_idx: usize, point_3d: &Vector3d
+    ) -> Vector2d {
+        let cam_int = self.camera_intrinsics(camera_idx);
+        let cam_ext = self.camera_extrinsics(camera_idx);
+        let obj_ext = self.object_extrinsics(object_idx);
+
+        cam_int.project_point(&cam_ext.transform(&obj_ext.transform(point_3d)))
+    }
+
+    /// Computes the reprojection residual of every point view in the same order
+    /// in which they were added.
+    pub fn object_point_view_residuals(&self) -> Vec<ObjectPointViewResidual> {
+        let mut out = vec![];
+
+        for pt in &self.solver.object_points {
+            let (point_3d, shared_point_idx) = match &pt.point {
+                ObjectPointSource::Fixed(p) => (p.clone(), None),
+                ObjectPointSource::Shared(idx) => (self.shared_object_point(*idx), Some(*idx)),
+            };
+
+            let expected = self.project_object_point(pt.camera_idx, pt.object_idx, &point_3d);
+
+            out.push(ObjectPointViewResidual {
+                camera_idx: pt.camera_idx,
+                object_idx: pt.object_idx,
+                shared_point_idx,
+                point_3d,
+                residual: pt.point_2d.clone() - expected,
+            });
+        }
+
+        out
+    }
+
     /// Calculates the final RMS reprojection error.
     pub fn error(&self) -> f64 {
         let mut sum = 0.0;
         let mut n = 0;
 
-        for pt in &self.solver.object_points {
-            let cam_int = self.camera_intrinsics(pt.camera_idx);
-            let cam_ext = self.camera_extrinsics(pt.camera_idx);
-            let obj_ext = self.object_extrinsics(pt.object_idx);
-
-            let expected = cam_int.project_point(
-                &cam_ext.transform(&obj_ext.transform(&pt.point_3d))
-            );
-            let actual = pt.point_2d.clone();
-
-            sum += (expected - actual).norm_squared();
+        for r in self.object_point_view_residuals() {
+            sum += r.residual.norm_squared();
             n += 1;
         }
 
@@ -226,9 +358,10 @@ impl<'a> BundleAdjustmentSolution<'a> {
 /// Params:
 /// [0-5] : Camera rotation and translation
 /// [6-11] : Object rotation and translation
-/// [12..] : Camera intrinsics
+/// [12-14] : Object local point (only present if 'point_3d' is None)
+/// [12.. or 15..] : Camera intrinsics
 struct ObjectPointReprojectionResidual {
-    point_3d: Vector3d,
+    point_3d: Option<Vector3d>,
     point_2d: Vector2d,
 }
 
@@ -245,9 +378,14 @@ impl ObjectPointReprojectionResidual {
         let object_small_axis_angle = vec3d(params[6], params[7], params[8]);
         let object_translation = vec3d(params[9], params[10], params[11]);
 
-        let intrinsics = CameraIntrinsicsModel::parse(&params[12..]);
-
-        let pt3 = &self.point_3d;
+        let (pt3, intrinsics) = match &self.point_3d {
+            Some(p) => (p.clone(), CameraIntrinsicsModel::parse(&params[12..])),
+            None => (
+                vec3d(params[12], params[13], params[14]),
+                CameraIntrinsicsModel::parse(&params[15..])
+            ),
+        };
+        let pt3 = &pt3;
         let pt2 = &self.point_2d;
 
         let projected = {

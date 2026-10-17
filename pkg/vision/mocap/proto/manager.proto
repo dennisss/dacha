@@ -301,6 +301,8 @@ message ExecuteRequest {
         bool stop_aux_rpc_server = 23;
 
         SaveFactoryIntrinsicsCommand save_factory_intrinsics = 24;
+
+        RefineWandingCalibrationCommand refine_wanding_calibration = 25;
     }
 }
 

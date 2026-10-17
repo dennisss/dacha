@@ -1,5 +1,7 @@
+use common::errors::*;
 use mocap_proto::mocap::*;
 use math::matrix::{Vector3d, Vector2d, vec2d, vec3d, Matrix3d};
+use math_proto_util::VectorProtoExt;
 use math::geometry::line::Line2;
 use vision::*;
 use math::matrix::axis_angle::to_axis_angle;
@@ -27,6 +29,38 @@ pub struct BlobPatternFinder<'a> {
     intrinsics: &'a CameraIntrinsicsModel,
     results: &'a BlobResults,
     undistorted_points: Vec<Vector2d>,
+    reference_points: Vec<Vector3d>,
+}
+
+/// Number of markers on the T-wand.
+pub const NUM_WAND_MARKERS: usize = 4;
+
+/// Gets the 3d positions of the wand markers in the wand's own frame in the
+/// order: left arm end, middle, right arm end, bottom arm end.
+///
+/// These are the explicitly configured points if present, else the nominal T
+/// shape built from the configured arm lengths.
+pub fn wand_reference_points(config: &WandPatternFinderConfig) -> Result<Vec<Vector3d>> {
+    if config.points().is_empty() {
+        return Ok(vec![
+            vec3d(-config.left_arm_length(), 0., 0.),
+            vec3d(0.,  0., 0.),
+            vec3d(config.right_arm_length(), 0., 0.),
+            vec3d(0., -config.bottom_length(), 0.),
+        ]);
+    }
+
+    if config.points().len() != NUM_WAND_MARKERS {
+        return Err(format_err!(
+            "Expected {} wand points but got {}", NUM_WAND_MARKERS, config.points().len()));
+    }
+
+    let mut out = vec![];
+    for p in config.points() {
+        out.push(Vector3d::from_proto(p)?);
+    }
+
+    Ok(out)
 }
 
 
@@ -54,7 +88,10 @@ impl<'a> BlobPatternFinder<'a> {
             undistorted_points.push(norm);
         }
 
-        let finder = Self { config, intrinsics, results, undistorted_points };
+        // NOTE: The config is validated when it is loaded.
+        let reference_points = wand_reference_points(config).ok()?;
+
+        let finder = Self { config, intrinsics, results, undistorted_points, reference_points };
         finder.find_t_wand_inner()
     }
 
@@ -254,13 +291,7 @@ impl<'a> BlobPatternFinder<'a> {
             points_2d_norm.push(self.intrinsics.unproject_point(&pt));            
         }
 
-        let c = &self.config;
-        let points_3d = vec![
-            vec3d(-c.left_arm_length(), 0., 0.),
-            vec3d(0.,  0., 0.),
-            vec3d(c.right_arm_length(), 0., 0.),
-            vec3d(0., -c.bottom_length(), 0.),
-        ];
+        let points_3d = self.reference_points.clone();
 
         // Guess the rotation of the wand assuming the camera on top of the wand and
         // aligning the two lines that form the wand in 2d space.

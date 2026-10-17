@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package mocap;
 
+import "pkg/math/proto/matrix.proto";
 
 message WandPatternFinderConfig {
     // Maximum distance in pixels between two blobs in the pattern.
@@ -41,5 +42,23 @@ message WandPatternFinderConfig {
 
     // Minimum distance of the bottom arm point from the line formed by
     // the other three points.
-    double min_bottom_line_pixel_distance = 12; 
+    double min_bottom_line_pixel_distance = 12;
+
+    // Optional measured 3d positions (sphere centers in meters) of the 4 wand
+    // markers in the order: left arm end, middle, right arm end, bottom arm end.
+    //
+    // If set, these override the T shape defined by left_arm_length,
+    // right_arm_length and bottom_length for pose estimation, calibration and
+    // origin setting. The arm lengths are still used by the 2d detection
+    // heuristics.
+    //
+    // The points should use the same frame as the nominal T:
+    //   (-left_arm_length, 0, 0), (0, 0, 0), (right_arm_length, 0, 0), (0, -bottom_length, 0)
+    // (middle marker at the origin, left marker on -X, bottom marker in the XY
+    // plane at -Y).
+    //
+    // Applying a wanding calibration that was refined (see
+    // RefineWandingCalibrationCommand) sets the measured points here until the
+    // manager restarts (they are not saved to the config file).
+    repeated math.VectorProto points = 13;
 }

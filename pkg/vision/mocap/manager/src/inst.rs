@@ -212,7 +212,12 @@ impl MocapManager {
         let config_path = data_dir.join(CONFIG_PATCH_FILE);
         if file::exists(&config_path).await? {
             let data = file::read(&config_path).await?;
-            let diff = MocapManagerConfig::parse(&data)?;
+            let mut diff = MocapManagerConfig::parse(&data)?;
+
+            // Measured wand points are only kept per session (see
+            // ManagerConfigContainer::merge_from) but older versions saved them.
+            diff.clear_wand();
+
             config.merge_from(&diff)?;
         }
 
@@ -645,6 +650,17 @@ impl MocapManagerInner {
                 if let Some(fut) = waiter {
                     fut.await;
                 }
+            }
+
+            ExecuteRequestCommandCase::RefineWandingCalibration(_) => {
+                let waiter = lock!(state <= self.shared.state.lock().await?, {
+                    match &state.mode {
+                        Mode::WandingCalibration(mode) => mode.refine(),
+                        _ => Err(err_msg("Not wanding")),
+                    }
+                })?;
+
+                waiter.await;
             }
 
             ExecuteRequestCommandCase::ApplyWandingCalibration(_) => {

@@ -7,6 +7,7 @@ use math_proto_util::VectorProtoExt;
 use crate::matching::TrackedPoint;
 use crate::rigid_body::*;
 use crate::config::*;
+use crate::wand::wand_reference_points;
 
 
 /// Finds a calibration wand in the given point cloud and creates a config
@@ -21,13 +22,16 @@ pub fn set_origin_with_wand(
     let mut tracker_config = config.rigid_body_tracker().clone();
     tracker_config.clear_bodies();
 
+    // The origin frame is the wand frame rotated by 180 degrees around Z and
+    // raised by the marker height (wand laying flat on the ground).
     let w = config.wand();
+    let reference_points = wand_reference_points(w)?;
     let pts = vec![
-        vec3d(0., 0., w.height()),
-        vec3d(w.left_arm_length(), 0., w.height()),
-        vec3d(-w.right_arm_length(), 0., w.height()),
-        vec3d(0., w.bottom_length(), w.height()),
-    ];
+        &reference_points[1],
+        &reference_points[0],
+        &reference_points[2],
+        &reference_points[3],
+    ].into_iter().map(|p| vec3d(-p.x(), -p.y(), p.z() + w.height())).collect::<Vec<_>>();
 
     let body = tracker_config.new_bodies();
     body.set_id(1u32);
